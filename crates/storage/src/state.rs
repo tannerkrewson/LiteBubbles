@@ -498,7 +498,8 @@ impl SecretStore for GnomeSecretService {
             .map_err(|_| SecretStoreError::Unavailable {
                 operation: SecretOperation::Delete,
             })?;
-        item.delete()
+        let _prompt = item
+            .delete()
             .await
             .map_err(|_| SecretStoreError::Rejected {
                 operation: SecretOperation::Delete,
@@ -575,7 +576,7 @@ trait SecretItem {
         &self,
         secret: (OwnedObjectPath, Vec<u8>, Vec<u8>, String),
     ) -> zbus::Result<()>;
-    async fn delete(&self) -> zbus::Result<()>;
+    async fn delete(&self) -> zbus::Result<OwnedObjectPath>;
 }
 
 /// Result of a sign-out/purge operation. It contains counts/flags only.
