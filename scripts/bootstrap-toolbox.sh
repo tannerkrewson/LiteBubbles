@@ -17,6 +17,10 @@ if ! command -v podman >/dev/null 2>&1; then
     exit 1
 fi
 
+if [[ "$(podman inspect --format '{{.State.Running}}' "$toolbox_name")" != "true" ]]; then
+    podman start "$toolbox_name" >/dev/null
+fi
+
 podman exec "$toolbox_name" sudo dnf install -y \
     gcc gcc-c++ clang pkgconf-pkg-config \
     gtk4-devel libadwaita-devel glib2-devel openssl-devel \
