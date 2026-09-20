@@ -6,6 +6,8 @@ members = [
     "crates/mock-backend",
     "crates/storage",
     "crates/rustpush-backend",
+    "crates/validation-provider",
+    "crates/validation-helper",
     "crates/daemon",
     "crates/app",
 ]
