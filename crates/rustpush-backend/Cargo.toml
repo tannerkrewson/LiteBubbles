@@ -1,0 +1,10 @@
+[package]
+name = "litebubbles-rustpush-backend"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+litebubbles-core = { path = "../core" }
+thiserror.workspace = true

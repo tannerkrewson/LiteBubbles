@@ -1,0 +1,8 @@
+LiteBubbles is distributed under the Server Side Public License, version 1.0
+(SSPL-1.0), for the initial rustpush-linked implementation.
+
+The authoritative license text is available at:
+https://www.mongodb.com/licensing/server-side-public-license
+
+Third-party components retain their own licenses. See THIRD-PARTY-NOTICES for
+the component inventory and license notices.
