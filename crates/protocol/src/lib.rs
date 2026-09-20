@@ -18,12 +18,16 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub const MIN_SUPPORTED_VERSION: u16 = PROTOCOL_VERSION;
 /// The highest protocol version implemented by this crate.
 pub const MAX_SUPPORTED_VERSION: u16 = PROTOCOL_VERSION;
-/// Well-known service name owned by the daemon.
-pub const BUS_NAME: &str = "org.litebubbles.LiteBubbles";
-/// Object path exported by the daemon.
-pub const OBJECT_PATH: &str = "/org/litebubbles/LiteBubbles";
+/// GApplication identity derived from the authenticated GitHub owner.
+pub const APPLICATION_ID: &str = "io.github.tannerkrewson.LiteBubbles";
+/// Well-known service name owned by the long-running backend daemon.
+pub const BACKEND_BUS_NAME: &str = "io.github.tannerkrewson.LiteBubbles.Backend";
+/// Backward-compatible alias for the daemon's well-known service name.
+pub const BUS_NAME: &str = BACKEND_BUS_NAME;
+/// Object path exported by the backend daemon.
+pub const OBJECT_PATH: &str = "/io/github/tannerkrewson/LiteBubbles/Backend";
 /// Stable D-Bus interface name for protocol version 1.
-pub const INTERFACE_NAME: &str = "org.litebubbles.Protocol1";
+pub const INTERFACE_NAME: &str = "io.github.tannerkrewson.LiteBubbles.Backend.Protocol1";
 /// Maximum number of records returned by one paginated request.
 pub const MAX_PAGE_SIZE: u32 = 500;
 
@@ -87,7 +91,10 @@ pub fn negotiate_version(request: &HelloRequest) -> Result<u16, ProtocolError> {
 
 /// Typed failures returned by protocol methods.
 #[derive(Debug, DBusError)]
-#[zbus(prefix = "org.litebubbles.Protocol1.Error", impl_display = true)]
+#[zbus(
+    prefix = "io.github.tannerkrewson.LiteBubbles.Backend.Protocol1.Error",
+    impl_display = true
+)]
 pub enum ProtocolError {
     /// The client and daemon have no mutually supported protocol version.
     UnsupportedVersion(String),
@@ -766,9 +773,9 @@ pub struct ProtocolEvent {
 /// `#[zbus::interface(name = INTERFACE_NAME)]`; this proxy is provided so
 /// later clients do not duplicate method names or wire types.
 #[zbus::proxy(
-    interface = "org.litebubbles.Protocol1",
-    default_service = "org.litebubbles.LiteBubbles",
-    default_path = "/org/litebubbles/LiteBubbles"
+    interface = "io.github.tannerkrewson.LiteBubbles.Backend.Protocol1",
+    default_service = "io.github.tannerkrewson.LiteBubbles.Backend",
+    default_path = "/io/github/tannerkrewson/LiteBubbles/Backend"
 )]
 pub trait LiteBubbles {
     /// Negotiate the protocol before making other calls.
@@ -903,11 +910,22 @@ mod tests {
         let error = ProtocolError::NotFound("message-1".to_owned());
         assert_eq!(
             error.name().as_str(),
-            "org.litebubbles.Protocol1.Error.NotFound"
+            "io.github.tannerkrewson.LiteBubbles.Backend.Protocol1.Error.NotFound"
         );
         assert_eq!(
             error.to_string(),
-            "org.litebubbles.Protocol1.Error.NotFound: message-1"
+            "io.github.tannerkrewson.LiteBubbles.Backend.Protocol1.Error.NotFound: message-1"
+        );
+    }
+
+    #[test]
+    fn dbus_identifiers_match_application_identity() {
+        assert_eq!(APPLICATION_ID, "io.github.tannerkrewson.LiteBubbles");
+        assert_eq!(BUS_NAME, "io.github.tannerkrewson.LiteBubbles.Backend");
+        assert_eq!(OBJECT_PATH, "/io/github/tannerkrewson/LiteBubbles/Backend");
+        assert_eq!(
+            INTERFACE_NAME,
+            "io.github.tannerkrewson.LiteBubbles.Backend.Protocol1"
         );
     }
 
