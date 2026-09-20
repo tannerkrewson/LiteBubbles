@@ -790,6 +790,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "litebubbles-core",
+ "litebubbles-mock-backend",
 ]
 
 [[package]]

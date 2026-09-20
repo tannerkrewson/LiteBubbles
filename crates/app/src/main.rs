@@ -3,9 +3,10 @@ use std::{cell::RefCell, rc::Rc};
 use adw::prelude::*;
 use gtk::{gio, glib};
 use litebubbles_core::{
-    Conversation, ConversationId, ConversationKind, DeliveryState, Message, MessageId, MessagePart,
-    Participant, ParticipantId, ParticipantRole, ReadState, TextPart, Timestamp,
+    Conversation, ConversationId, ConversationKind, Message, MessagePart, PersonId, ReadState,
+    Timestamp,
 };
+use litebubbles_mock_backend::{FixtureSet, MockBackend};
 
 const APPLICATION_ID: &str = "io.github.tannerkrewson.LiteBubbles";
 
@@ -28,80 +29,221 @@ impl ViewState {
     }
 }
 
-#[derive(Clone, Debug)]
-struct DemoConversation {
-    conversation: Conversation,
-    last_message: Message,
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ConversationItem {
+    id: ConversationId,
+    title: String,
+    preview: String,
+    timestamp: Option<Timestamp>,
     unread: u32,
+    participant_fallback: String,
+    avatar_available: bool,
+    search_text: String,
 }
 
-impl DemoConversation {
-    fn title(&self) -> &str {
-        self.conversation
+impl ConversationItem {
+    fn from_fixture(fixture: &FixtureSet, conversation: &Conversation) -> Self {
+        let account_person_ids = fixture
+            .account
+            .identities
+            .iter()
+            .filter_map(|identity| identity.person_id.as_ref())
+            .collect::<Vec<_>>();
+        let participant_names = conversation
+            .participants
+            .iter()
+            .filter_map(|participant| {
+                participant_name(
+                    fixture,
+                    participant.person_id.as_ref(),
+                    participant.display_name.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let participant_fallback = participant_names.join(", ");
+        let direct_fallback = conversation
+            .participants
+            .iter()
+            .filter(|participant| {
+                participant
+                    .person_id
+                    .as_ref()
+                    .is_none_or(|person_id| !account_person_ids.contains(&person_id))
+            })
+            .find_map(|participant| {
+                participant_name(
+                    fixture,
+                    participant.person_id.as_ref(),
+                    participant.display_name.as_deref(),
+                )
+            });
+        let title = conversation
             .title
             .as_deref()
-            .or_else(|| {
-                self.conversation
-                    .participants
-                    .first()
-                    .and_then(|participant| participant.display_name.as_deref())
+            .filter(|title| !title.trim().is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| match &conversation.kind {
+                ConversationKind::Group(details) => details.title.clone(),
+                ConversationKind::Direct => direct_fallback,
             })
-            .unwrap_or("Conversation")
+            .or_else(|| participant_names.first().cloned())
+            .unwrap_or_else(|| "Conversation".to_owned());
+        let messages = fixture
+            .messages_for(&conversation.id)
+            .filter(|message| !message.is_unsent())
+            .collect::<Vec<_>>();
+        let latest_message = messages
+            .iter()
+            .max_by_key(|message| message.sent_at)
+            .copied();
+        let unread = messages
+            .iter()
+            .filter(|message| matches!(&message.read_state, ReadState::Unread))
+            .count() as u32;
+        let avatar_available = conversation_avatar_available(fixture, conversation);
+        let preview = latest_message
+            .map(message_preview)
+            .unwrap_or_else(|| "No messages yet".to_owned());
+        let search_text = format!(
+            "{} {} {}",
+            title.to_lowercase(),
+            participant_fallback.to_lowercase(),
+            preview.to_lowercase()
+        );
+
+        Self {
+            id: conversation.id.clone(),
+            title,
+            preview,
+            timestamp: latest_message
+                .map(|message| message.sent_at)
+                .or(conversation.updated_at),
+            unread,
+            participant_fallback,
+            avatar_available,
+            search_text,
+        }
+    }
+
+    fn title(&self) -> &str {
+        &self.title
     }
 
     fn snippet(&self) -> &str {
-        self.last_message
-            .parts
-            .iter()
-            .find_map(|part| match part {
-                MessagePart::Text(text) => Some(text.text.as_str()),
-                _ => None,
-            })
-            .unwrap_or("No message preview")
+        &self.preview
     }
+
+    fn timestamp(&self) -> Option<Timestamp> {
+        self.timestamp
+    }
+
+    fn matches_query(&self, query: &str) -> bool {
+        let query = query.trim().to_lowercase();
+        query.is_empty() || self.search_text.contains(&query)
+    }
+}
+
+fn participant_name(
+    fixture: &FixtureSet,
+    person_id: Option<&PersonId>,
+    participant_name: Option<&str>,
+) -> Option<String> {
+    participant_name
+        .filter(|name| !name.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            person_id.and_then(|person_id| {
+                fixture
+                    .people
+                    .iter()
+                    .find(|person| &person.id == person_id)
+                    .map(|person| person.display_name.clone())
+            })
+        })
+}
+
+fn conversation_avatar_available(fixture: &FixtureSet, conversation: &Conversation) -> bool {
+    match &conversation.kind {
+        ConversationKind::Group(details) => details.avatar.is_some(),
+        ConversationKind::Direct => conversation.participants.iter().any(|participant| {
+            participant.person_id.as_ref().is_some_and(|person_id| {
+                fixture
+                    .people
+                    .iter()
+                    .find(|person| &person.id == person_id)
+                    .and_then(|person| person.avatar.as_ref())
+                    .is_some()
+            })
+        }),
+    }
+}
+
+fn message_preview(message: &Message) -> String {
+    message
+        .parts
+        .iter()
+        .find_map(|part| match part {
+            MessagePart::Text(text) => Some(text.text.clone()),
+            MessagePart::Attachment(attachment) => attachment
+                .caption
+                .as_ref()
+                .map(|caption| caption.text.clone())
+                .or_else(|| Some("Attachment".to_owned())),
+            MessagePart::LinkPreview(link) => {
+                link.title.clone().or_else(|| Some("Link".to_owned()))
+            }
+            MessagePart::Location(_) => Some("Location".to_owned()),
+            MessagePart::Contact(contact) => Some(contact.display_name.clone()),
+            MessagePart::ServiceExtension(_) => None,
+        })
+        .unwrap_or_else(|| "No message preview".to_owned())
+}
+
+fn timestamp_text(timestamp: Option<Timestamp>) -> String {
+    timestamp
+        .and_then(|timestamp| {
+            glib::DateTime::from_unix_local(timestamp.as_millis() / 1_000)
+                .ok()
+                .and_then(|date| date.format("%b %-d").ok())
+                .map(|text| text.to_string())
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Debug)]
 struct UiModel {
     state: ViewState,
-    selected: Option<usize>,
-    conversations: Vec<DemoConversation>,
+    selected: Option<ConversationId>,
+    conversations: Vec<ConversationItem>,
 }
 
 impl UiModel {
-    fn demo() -> Self {
+    fn fixture() -> Self {
+        let backend = MockBackend::new();
+        Self::from_fixture(backend.fixture())
+    }
+
+    fn from_fixture(fixture: &FixtureSet) -> Self {
+        let conversations = fixture
+            .conversations
+            .iter()
+            .map(|conversation| ConversationItem::from_fixture(fixture, conversation))
+            .collect::<Vec<_>>();
+        let selected = conversations.first().map(|item| item.id.clone());
         Self {
             state: ViewState::Ready,
-            selected: Some(0),
-            conversations: vec![
-                demo_conversation(
-                    "maya-chen",
-                    "Maya Chen",
-                    "The garden is looking great this morning.",
-                    2,
-                    18_000,
-                ),
-                demo_conversation(
-                    "weekend-plans",
-                    "Weekend plans",
-                    "I can bring the picnic blanket.",
-                    0,
-                    12_000,
-                ),
-                demo_conversation(
-                    "design-circle",
-                    "Design circle",
-                    "The new color study is ready to review.",
-                    1,
-                    6_000,
-                ),
-            ],
+            selected,
+            conversations,
         }
     }
 
-    fn select(&mut self, index: usize) {
-        if index < self.conversations.len() {
-            self.selected = Some(index);
+    fn select(&mut self, id: &ConversationId) {
+        if self
+            .conversations
+            .iter()
+            .any(|conversation| conversation.id == *id)
+        {
+            self.selected = Some(id.clone());
             self.state = ViewState::Ready;
         }
     }
@@ -111,65 +253,10 @@ impl UiModel {
         self.state = ViewState::Empty;
     }
 
-    fn selected_conversation(&self) -> Option<&DemoConversation> {
+    fn selected_conversation(&self) -> Option<&ConversationItem> {
         self.selected
-            .and_then(|index| self.conversations.get(index))
-    }
-}
-
-fn demo_conversation(
-    slug: &str,
-    title: &str,
-    message_text: &str,
-    unread: u32,
-    timestamp: i64,
-) -> DemoConversation {
-    let conversation_id = ConversationId::new(format!("conversation-{slug}")).unwrap();
-    let participant_id = ParticipantId::new(format!("participant-{slug}")).unwrap();
-    let message_id = MessageId::new(format!("message-{slug}")).unwrap();
-    let participant = Participant {
-        id: participant_id.clone(),
-        person_id: None,
-        identity_id: None,
-        display_name: Some(title.to_owned()),
-        role: ParticipantRole::Member,
-        joined_at: Some(Timestamp::from_millis(timestamp - 86_400_000)),
-        left_at: None,
-        extensions: vec![],
-    };
-    let conversation = Conversation {
-        id: conversation_id.clone(),
-        kind: ConversationKind::Direct,
-        title: Some(title.to_owned()),
-        participants: vec![participant],
-        created_at: Some(Timestamp::from_millis(timestamp - 86_400_000)),
-        updated_at: Some(Timestamp::from_millis(timestamp)),
-        extensions: vec![],
-    };
-    let last_message = Message {
-        id: message_id,
-        conversation_id,
-        sender: Some(participant_id),
-        sent_at: Timestamp::from_millis(timestamp),
-        parts: vec![MessagePart::Text(TextPart {
-            text: message_text.to_owned(),
-            formatting: vec![],
-        })],
-        mutations: vec![],
-        reactions: vec![],
-        delivery: DeliveryState::Delivered,
-        delivery_receipts: vec![],
-        read_state: ReadState::Read {
-            at: Timestamp::from_millis(timestamp),
-        },
-        read_receipts: vec![],
-        reply_to: None,
-        extensions: vec![],
-    };
-    DemoConversation {
-        conversation,
-        last_message,
-        unread,
+            .as_ref()
+            .and_then(|id| self.conversations.iter().find(|item| &item.id == id))
     }
 }
 
@@ -185,7 +272,7 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_window(application: &adw::Application) {
-    let model = Rc::new(RefCell::new(UiModel::demo()));
+    let model = Rc::new(RefCell::new(UiModel::fixture()));
     let window = adw::ApplicationWindow::builder()
         .application(application)
         .title("LiteBubbles")
@@ -199,15 +286,19 @@ fn build_window(application: &adw::Application) {
         .transition_type(gtk::StackTransitionType::Crossfade)
         .build();
     append_state_pages(&content_stack);
-    for (index, conversation) in model.borrow().conversations.iter().enumerate() {
+    for conversation in &model.borrow().conversations {
         let page = conversation_page(conversation, &content_stack);
         content_stack.add_titled(
             &page,
-            Some(&format!("conversation-{index}")),
+            Some(&conversation_page_name(&conversation.id)),
             conversation.title(),
         );
     }
-    content_stack.set_visible_child_name("conversation-0");
+    if let Some(selected) = model.borrow().selected_conversation() {
+        content_stack.set_visible_child_name(&conversation_page_name(&selected.id));
+    } else {
+        content_stack.set_visible_child_name(ViewState::Empty.page_name());
+    }
 
     let split_view = adw::NavigationSplitView::builder()
         .min_sidebar_width(260.0)
@@ -289,8 +380,10 @@ fn conversation_sidebar(
 
     let search = gtk::SearchEntry::builder()
         .placeholder_text("Search conversations")
+        .tooltip_text("Search conversations (Ctrl+F)")
         .hexpand(true)
         .build();
+    search.set_accessible_role(gtk::AccessibleRole::SearchBox);
     let search_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     search_box.set_margin_start(12);
     search_box.set_margin_end(12);
@@ -298,52 +391,122 @@ fn conversation_sidebar(
     search_box.set_margin_bottom(8);
     search_box.append(&search);
 
-    let list = gtk::ListBox::new();
-    list.set_selection_mode(gtk::SelectionMode::Single);
-    list.set_activate_on_single_click(true);
-    list.add_css_class("navigation-sidebar");
+    let store = gio::ListStore::new::<glib::BoxedAnyObject>();
     for conversation in &model.borrow().conversations {
-        list.append(&conversation_row(conversation));
+        store.append(&glib::BoxedAnyObject::new(conversation.clone()));
     }
+
+    let query = Rc::new(RefCell::new(String::new()));
+    let query_for_filter = Rc::clone(&query);
+    let filter = gtk::CustomFilter::new(move |object| {
+        object
+            .downcast_ref::<glib::BoxedAnyObject>()
+            .and_then(|item| item.try_borrow::<ConversationItem>().ok())
+            .is_some_and(|item| item.matches_query(&query_for_filter.borrow()))
+    });
+    let filtered = gtk::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
+    filtered.set_incremental(true);
+    let selection = gtk::SingleSelection::new(Some(filtered.clone()));
+    selection.set_autoselect(false);
+    selection.set_can_unselect(true);
+
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, object| {
+        let list_item = object
+            .downcast_ref::<gtk::ListItem>()
+            .expect("list item factory setup receives GtkListItem");
+        list_item.set_selectable(true);
+        list_item.set_activatable(true);
+        list_item.set_focusable(true);
+        list_item.connect_selected_notify(update_row_selection);
+        list_item.set_child(Some(&conversation_row_widget()));
+    });
+    factory.connect_bind(|_, object| {
+        let list_item = object
+            .downcast_ref::<gtk::ListItem>()
+            .expect("list item factory bind receives GtkListItem");
+        bind_conversation_row(list_item);
+    });
+    factory.connect_unbind(|_, object| {
+        let list_item = object
+            .downcast_ref::<gtk::ListItem>()
+            .expect("list item factory unbind receives GtkListItem");
+        list_item.set_accessible_label("");
+        list_item.set_accessible_description("");
+    });
+
+    let list = gtk::ListView::new(Some(selection.clone()), Some(factory.clone()));
+    list.set_vexpand(true);
+    list.set_single_click_activate(true);
+    list.set_show_separators(false);
+    list.add_css_class("navigation-sidebar");
+    list.set_accessible_role(gtk::AccessibleRole::ListBox);
+
     let model_for_search = Rc::clone(model);
-    let list_for_search = list.clone();
+    let query_for_search = Rc::clone(&query);
+    let filter_for_search = filter.clone();
+    let selection_for_search = selection.clone();
+    let filtered_for_search = filtered.clone();
     search.connect_search_changed(move |entry| {
-        let query = entry.text().to_ascii_lowercase();
-        let mut row = list_for_search.first_child();
-        let mut index = 0;
-        while let Some(child) = row {
-            let visible = model_for_search
-                .borrow()
-                .conversations
-                .get(index)
-                .map(|conversation| {
-                    query.is_empty() || conversation.title().to_ascii_lowercase().contains(&query)
-                })
-                .unwrap_or(false);
-            child.set_visible(visible);
-            row = child.next_sibling();
-            index += 1;
+        query_for_search.replace(entry.text().trim().to_lowercase());
+        filter_for_search.changed(gtk::FilterChange::Different);
+
+        let selected_id = model_for_search.borrow().selected.clone();
+        let selected_position = selected_id.and_then(|id| {
+            (0..filtered_for_search.n_items()).find(|position| {
+                filtered_for_search
+                    .item(*position)
+                    .map(|object| {
+                        object
+                            .downcast::<glib::BoxedAnyObject>()
+                            .ok()
+                            .and_then(|item| {
+                                item.try_borrow::<ConversationItem>()
+                                    .ok()
+                                    .map(|item| item.id == id)
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+            })
+        });
+        if let Some(position) = selected_position {
+            selection_for_search.set_selected(position);
+        } else if filtered_for_search.n_items() > 0 {
+            selection_for_search.set_selected(0);
+        } else {
+            selection_for_search.set_selected(gtk::INVALID_LIST_POSITION);
         }
+    });
+
+    let search_for_stop = search.clone();
+    search.connect_stop_search(move |_| {
+        search_for_stop.set_text("");
     });
 
     let model_for_selection = Rc::clone(model);
     let split_for_selection = split_view.clone();
     let stack_for_selection = content_stack.clone();
-    list.connect_row_selected(move |_, row| {
-        let Some(row) = row else { return };
-        let index = row.index();
-        if index < 0 {
+    selection.connect_selected_item_notify(move |selection| {
+        let Some(object) = selection.selected_item() else {
             return;
-        }
-        let index = index as usize;
-        model_for_selection.borrow_mut().select(index);
-        stack_for_selection.set_visible_child_name(&format!("conversation-{index}"));
+        };
+        let Ok(item) = object.downcast::<glib::BoxedAnyObject>() else {
+            return;
+        };
+        let Ok(item) = item.try_borrow::<ConversationItem>() else {
+            return;
+        };
+        let id = item.id.clone();
+        drop(item);
+        model_for_selection.borrow_mut().select(&id);
+        stack_for_selection.set_visible_child_name(&conversation_page_name(&id));
         if split_for_selection.is_collapsed() {
             split_for_selection.set_show_content(true);
         }
     });
-    if let Some(row) = list.row_at_index(0) {
-        list.select_row(Some(&row));
+    if filtered.n_items() > 0 {
+        selection.set_selected(0);
     }
 
     let scroll = gtk::ScrolledWindow::builder()
@@ -360,43 +523,166 @@ fn conversation_sidebar(
     (toolbar, search)
 }
 
-fn conversation_row(conversation: &DemoConversation) -> gtk::ListBoxRow {
-    let row = gtk::ListBoxRow::new();
+fn conversation_page_name(id: &ConversationId) -> String {
+    format!("conversation-{}", id.as_str())
+}
+
+fn conversation_row_widget() -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    outer.set_hexpand(true);
     outer.set_margin_start(12);
     outer.set_margin_end(12);
     outer.set_margin_top(10);
     outer.set_margin_bottom(10);
-    let avatar = adw::Avatar::new(40, Some(conversation.title()), true);
+    outer.add_css_class("conversation-row");
+    outer.set_accessible_role(gtk::AccessibleRole::ListItem);
+
+    let avatar = adw::Avatar::new(40, None, true);
+    avatar.set_valign(gtk::Align::Start);
     outer.append(&avatar);
 
     let details = gtk::Box::new(gtk::Orientation::Vertical, 3);
     details.set_hexpand(true);
+    details.set_valign(gtk::Align::Center);
     let title = gtk::Label::builder()
-        .label(conversation.title())
         .halign(gtk::Align::Start)
         .ellipsize(gtk::pango::EllipsizeMode::End)
         .build();
     title.add_css_class("heading");
-    let snippet = gtk::Label::builder()
-        .label(conversation.snippet())
+    let preview = gtk::Label::builder()
         .halign(gtk::Align::Start)
         .ellipsize(gtk::pango::EllipsizeMode::End)
         .lines(1)
         .build();
-    snippet.add_css_class("dim-label");
+    preview.add_css_class("dim-label");
     details.append(&title);
-    details.append(&snippet);
+    details.append(&preview);
+
+    let metadata = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    metadata.set_valign(gtk::Align::Start);
+    let timestamp = gtk::Label::new(None);
+    timestamp.add_css_class("caption");
+    timestamp.add_css_class("dim-label");
+    let unread = gtk::Label::new(None);
+    unread.add_css_class("numeric");
+    unread.add_css_class("accent");
+    unread.set_visible(false);
+    metadata.append(&timestamp);
+    metadata.append(&unread);
+
     outer.append(&details);
-    if conversation.unread > 0 {
-        let unread = gtk::Label::new(Some(&conversation.unread.to_string()));
-        unread.add_css_class("numeric");
-        unread.add_css_class("accent");
-        unread.set_valign(gtk::Align::Center);
-        outer.append(&unread);
-    }
-    row.set_child(Some(&outer));
-    row
+    outer.append(&metadata);
+    outer
+}
+
+fn bind_conversation_row(list_item: &gtk::ListItem) {
+    let Some(object) = list_item.item() else {
+        return;
+    };
+    let Ok(item) = object.downcast::<glib::BoxedAnyObject>() else {
+        return;
+    };
+    let Ok(item) = item.try_borrow::<ConversationItem>() else {
+        return;
+    };
+    let Some(root) = list_item
+        .child()
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+    else {
+        return;
+    };
+    let Some(avatar) = root
+        .first_child()
+        .and_then(|child| child.downcast::<adw::Avatar>().ok())
+    else {
+        return;
+    };
+    let Some(details) = avatar
+        .next_sibling()
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+    else {
+        return;
+    };
+    let Some(title) = details
+        .first_child()
+        .and_then(|child| child.downcast::<gtk::Label>().ok())
+    else {
+        return;
+    };
+    let Some(preview) = title
+        .next_sibling()
+        .and_then(|child| child.downcast::<gtk::Label>().ok())
+    else {
+        return;
+    };
+    let Some(metadata) = details
+        .next_sibling()
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+    else {
+        return;
+    };
+    let Some(timestamp) = metadata
+        .first_child()
+        .and_then(|child| child.downcast::<gtk::Label>().ok())
+    else {
+        return;
+    };
+    let Some(unread) = timestamp
+        .next_sibling()
+        .and_then(|child| child.downcast::<gtk::Label>().ok())
+    else {
+        return;
+    };
+
+    let title_text = item.title().to_owned();
+    let preview_text = item.snippet();
+    let timestamp_text = timestamp_text(item.timestamp());
+    let unread_text = item.unread.to_string();
+    let accessible_description = if item.unread == 0 {
+        format!(
+            "{}, {}, {}",
+            item.participant_fallback, preview_text, timestamp_text
+        )
+    } else {
+        format!(
+            "{}, {}, {}, {} unread",
+            item.participant_fallback, preview_text, timestamp_text, item.unread
+        )
+    };
+    avatar.set_text(Some(&title_text));
+    avatar.set_custom_image(None::<&gtk::gdk::Paintable>);
+    avatar.set_icon_name(None);
+    avatar.set_tooltip_text(if item.avatar_available {
+        Some("Conversation avatar")
+    } else {
+        None
+    });
+    title.set_label(&title_text);
+    preview.set_label(preview_text);
+    timestamp.set_label(&timestamp_text);
+    unread.set_label(&unread_text);
+    unread.set_visible(item.unread > 0);
+    list_item.set_accessible_label(&title_text);
+    list_item.set_accessible_description(&accessible_description);
+    root.set_tooltip_text(Some(&format!(
+        "{} — {}",
+        item.participant_fallback, preview_text
+    )));
+    update_row_selection(list_item);
+}
+
+fn update_row_selection(list_item: &gtk::ListItem) {
+    let Some(root) = list_item
+        .child()
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+    else {
+        return;
+    };
+    root.set_css_classes(if list_item.is_selected() {
+        &["conversation-row", "selected"]
+    } else {
+        &["conversation-row"]
+    });
 }
 
 fn content_toolbar(content_stack: &gtk::Stack, model: &Rc<RefCell<UiModel>>) -> adw::ToolbarView {
@@ -433,7 +719,7 @@ fn content_toolbar(content_stack: &gtk::Stack, model: &Rc<RefCell<UiModel>>) -> 
     toolbar
 }
 
-fn conversation_page(conversation: &DemoConversation, _stack: &gtk::Stack) -> gtk::ScrolledWindow {
+fn conversation_page(conversation: &ConversationItem, _stack: &gtk::Stack) -> gtk::ScrolledWindow {
     let messages = gtk::Box::new(gtk::Orientation::Vertical, 12);
     messages.set_margin_start(24);
     messages.set_margin_end(24);
@@ -549,8 +835,13 @@ fn install_window_actions(
     let model_for_retry = Rc::clone(model);
     let stack_for_retry = content_stack.clone();
     retry.connect_activate(move |_, _| {
-        model_for_retry.borrow_mut().state = ViewState::Ready;
-        stack_for_retry.set_visible_child_name("conversation-0");
+        let mut model = model_for_retry.borrow_mut();
+        model.state = ViewState::Ready;
+        if let Some(first) = model.conversations.first() {
+            let first_id = first.id.clone();
+            model.selected = Some(first_id.clone());
+            stack_for_retry.set_visible_child_name(&conversation_page_name(&first_id));
+        }
     });
     window.add_action(&retry);
 }
@@ -616,21 +907,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn demo_rows_are_valid_core_relationships() {
-        let model = UiModel::demo();
-        assert_eq!(model.conversations.len(), 3);
-        for row in &model.conversations {
-            assert!(row.conversation.validate().is_ok());
-            assert!(row.last_message.validate().is_ok());
-            assert_eq!(row.last_message.conversation_id, row.conversation.id);
+    fn fixture_rows_are_valid_core_relationships() {
+        let backend = MockBackend::new();
+        let fixture = backend.fixture();
+        let model = UiModel::fixture();
+        assert_eq!(model.conversations.len(), 2);
+        for conversation in &fixture.conversations {
+            assert!(conversation.validate().is_ok());
+            let latest = fixture
+                .messages_for(&conversation.id)
+                .max_by_key(|message| message.sent_at)
+                .expect("representative fixture rows have messages");
+            assert!(latest.validate().is_ok());
+            assert!(
+                model
+                    .conversations
+                    .iter()
+                    .any(|row| row.id == conversation.id)
+            );
         }
     }
 
     #[test]
     fn selection_and_empty_actions_update_shell_state() {
-        let mut model = UiModel::demo();
-        model.select(2);
-        assert_eq!(model.selected, Some(2));
+        let mut model = UiModel::fixture();
+        let selected = model.conversations[1].id.clone();
+        model.select(&selected);
+        assert_eq!(model.selected, Some(selected));
         assert_eq!(model.state, ViewState::Ready);
         model.show_empty();
         assert_eq!(model.selected, None);
@@ -638,11 +941,32 @@ mod tests {
     }
 
     #[test]
-    fn snippets_come_from_ordered_core_message_parts() {
-        let model = UiModel::demo();
+    fn fixture_rows_expose_fallbacks_previews_timestamps_and_unread_counts() {
+        let model = UiModel::fixture();
+        let direct = &model.conversations[0];
+        assert_eq!(direct.title(), "Maya Fixture");
+        assert_eq!(direct.participant_fallback, "Alex Fixture, Maya Fixture");
+        assert_eq!(direct.snippet(), "I took a look—here is the latest.");
+        assert_eq!(direct.unread, 1);
+        assert!(direct.avatar_available);
+        assert!(!timestamp_text(direct.timestamp()).is_empty());
+    }
+
+    #[test]
+    fn search_matches_titles_participants_and_latest_previews() {
+        let model = UiModel::fixture();
+        assert!(model.conversations[0].matches_query("maya"));
+        assert!(model.conversations[1].matches_query("failed delivery"));
+        assert!(!model.conversations[0].matches_query("weekend"));
+    }
+
+    #[test]
+    fn unread_count_ignores_removed_fixture_messages() {
+        let model = UiModel::fixture();
+        assert_eq!(model.conversations[1].unread, 2);
         assert_eq!(
-            model.conversations[0].snippet(),
-            "The garden is looking great this morning."
+            model.conversations[1].snippet(),
+            "This message demonstrates a failed delivery."
         );
     }
 }
