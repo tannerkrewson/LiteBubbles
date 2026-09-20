@@ -7,5 +7,13 @@ rust-version.workspace = true
 
 [dependencies]
 serde.workspace = true
-zbus = { version = "=5.13.0", features = ["option-as-array"] }
-zbus-macros = { package = "zbus_macros", version = "=5.13.0" }
+# Keep the complete D-Bus graph within the Rust 1.85 MSRV used by CI and the
+# documented Fedora Toolbx. The direct zvariant pin prevents a transitive
+# update from selecting a newer MSRV-only release.
+zbus = { version = "=5.12.0", features = ["option-as-array"] }
+zbus-macros = { package = "zbus_macros", version = "=5.12.0" }
+zvariant = { version = "=5.9.0", features = ["option-as-array"] }
+# These are transitive proc-macro helpers whose newer releases raised the MSRV
+# independently of zvariant's public version.
+zvariant-derive = { package = "zvariant_derive", version = "=5.9.0" }
+zvariant-utils = { package = "zvariant_utils", version = "=3.3.0" }

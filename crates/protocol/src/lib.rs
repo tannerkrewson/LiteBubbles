@@ -9,7 +9,8 @@
 use std::{fmt, path::Path};
 
 use serde::{Deserialize, Serialize};
-use zbus::{DBusError, zvariant::Type};
+use zbus::DBusError;
+use zvariant::Type;
 
 /// The major version encoded in the D-Bus interface name.
 pub const PROTOCOL_VERSION: u16 = 1;
@@ -824,7 +825,7 @@ pub trait LiteBubbles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zbus::zvariant::{LE, serialized::Context, to_bytes};
+    use zvariant::{LE, serialized::Context, to_bytes};
 
     fn id(value: &str) -> Id {
         Id::new(value).expect("test ID is valid")
