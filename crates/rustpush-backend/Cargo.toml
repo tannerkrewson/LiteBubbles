@@ -6,5 +6,7 @@ license-file.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
 litebubbles-core = { path = "../core" }
+prost.workspace = true
 thiserror.workspace = true
