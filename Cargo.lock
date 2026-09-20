@@ -840,12 +840,15 @@ dependencies = [
 name = "litebubbles-storage"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "futures-lite",
  "litebubbles-core",
  "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "zbus",
 ]
 
 [[package]]

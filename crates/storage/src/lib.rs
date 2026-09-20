@@ -15,6 +15,14 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
+mod state;
+
+pub use state::{
+    AppPaths, Diagnostic, DiagnosticOutcome, GnomeSecretService, MemorySecretStore, PurgeReport,
+    SecretKey, SecretOperation, SecretStore, SecretStoreError, SecretValue, SessionState,
+    StateError,
+};
+
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../migrations/0001_initial.sql")),
     (2, include_str!("../migrations/0002_indexes.sql")),
@@ -301,6 +309,8 @@ pub struct ServiceSyncState {
     pub service: String,
     pub account_id: Option<AccountId>,
     pub key: String,
+    /// Non-secret backend synchronization state only. Passwords, access
+    /// tokens, session cookies, and other credentials must use `SecretStore`.
     pub value: Vec<u8>,
     pub updated_at: Timestamp,
 }
