@@ -6,5 +6,6 @@ license-file.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-adw = { package = "libadwaita", version = "0.8" }
+adw = { package = "libadwaita", version = "0.8", features = ["v1_5"] }
 gtk = { package = "gtk4", version = "0.10" }
+litebubbles-core = { path = "../core" }
