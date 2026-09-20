@@ -21,6 +21,7 @@ Enter it and build the workspace:
 
 ```sh
 toolbox enter litebubbles-dev
+./scripts/prepare-rustpush.sh
 cargo build --workspace
 cargo test --workspace
 ```
@@ -50,6 +51,7 @@ user on the Silverblue host. The host is not changed with `rpm-ostree`.
 
 ```sh
 toolbox enter litebubbles-dev
+./scripts/prepare-rustpush.sh
 cargo build --workspace --release
 exit
 ./scripts/install-user.sh
@@ -82,7 +84,8 @@ implemented and tested.
 
 LB-011 is not yet acceptance-complete: it depends on the live backend adapter.
 The backend-independent LB-010 service boundary now owns the versioned D-Bus
-name and storage-backed state, while production refresh/send operations remain
-explicitly unavailable until LB-050 unblocks rustpush. LB-008 records the
-exact rustpush build blocker: the audited upstream revision references ten
-missing FairPlay certificate/key pairs under `certs/fairplay/`.
+name and storage-backed state. Public rustpush compilation is implemented by
+the audited, separable preparation patch documented in
+[`docs/lb-060-public-build.md`](docs/lb-060-public-build.md); genuine Apple
+FairPlay signing remains explicitly unavailable until the production provider
+work in LB-064 is complete.
