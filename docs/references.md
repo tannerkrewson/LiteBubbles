@@ -10,7 +10,10 @@ template is vendored by LiteBubbles.
 | Project | Repository and checkout | Audited revision | License facts from that revision |
 | --- | --- | --- | --- |
 | rustpush | `https://github.com/OpenBubbles/rustpush` — `/var/home/tannerkrewson/Projects/litebubbles-reference/rustpush` — `master` | `f35c4ee062b3c3eae54dc96b89b90ee99f5e1d0c` | `LICENSE` is Server Side Public License, version 1 (SSPL-1.0). `LICENSE.exceptions` grants a special unrestricted-dealing exception to OpenBubbles; it does not name LiteBubbles. |
+| rustpush PR #10 | `https://github.com/OpenBubbles/rustpush/pull/10` — public pull request | `a16fccae27260cd239a13ad12ea8067a7b695f93` | Unmerged development-only `dummy-fairplay` proposal; inspected as source reference, not merged wholesale. |
 | openbubbles-app | `https://github.com/OpenBubbles/openbubbles-app` — `/var/home/tannerkrewson/Projects/litebubbles-reference/openbubbles-app` — `rustpush` | `eed1b6332efbb17adbf5ebfa2263ad770169f75e` | `LICENSE` is Apache License 2.0. The checkout also has a BlueBubbles `upstream` remote; the audited application source is the OpenBubbles `origin` checkout on `rustpush`. |
+| openbubbles-build-modules | `https://github.com/stevesoltys/openbubbles-build-modules` — `/var/home/tannerkrewson/Projects/litebubbles-reference/openbubbles-build-modules` — `main` | `86fa9efa722f811fcb57fca3dd5d9c0d43db5be6` | `LICENSE` is MIT. Public adapters invoke an externally supplied x86_64 OpenBubbles component; the component itself is not part of this checkout. |
+| Mac-Hardware-Info | `https://github.com/OpenBubbles/Mac-Hardware-Info` — `/var/home/tannerkrewson/Projects/litebubbles-reference/Mac-Hardware-Info` — `main` | `5714720b9a68f4573fa0175abd23fab1b1da42d2` | No license file was present in the audited checkout; redistribution requires separate review. LiteBubbles uses it only as a format/reference source. |
 | Tether | `https://github.com/zackb/tether` — `/var/home/tannerkrewson/Projects/litebubbles-reference/tether` — `main` | `f4173de675f1463c02543fa62d4914115b337590` | `LICENSE` is the MIT License, copyright Zack Bartel 2026. GitHub has no `OpenBubbles/tether` repository; this is the Linux+iPhone Tether project whose daemon/UI patterns were requested. |
 | Fractal | `https://gitlab.gnome.org/World/fractal.git` — `/var/home/tannerkrewson/Projects/litebubbles-reference/fractal` — `main` | `6c1adadb5d2bc47ceb1183be90e53e2eb8ba9928` | `Cargo.toml` declares `GPL-3.0-or-later`; `LICENSE` points to `LICENSES/GPL-3.0-or-later.txt`. The REUSE inventory also records file-specific Apache-2.0, AGPL-3.0-or-later, GPL-2.0-or-later, CC0-1.0, CC-BY-SA-4.0, and `LicenseRef-BSD-Mapbox` material. |
 
@@ -54,6 +57,11 @@ The most important source locations are:
   `src/avconference.rs`, `src/findmy.rs`,
   `src/imessage/name_photo_sharing.rs`, and `src/passwords.rs` for the
   additional service capabilities.
+
+The FairPlay/validation split is documented in [lb-050-audit.md](lb-050-audit.md).
+In particular, the public legacy FairPlay pair used by rustpush CI is not
+copied into LiteBubbles, and no installed OpenBubbles component is implied by
+this reference checkout.
 
 ### openbubbles-app
 

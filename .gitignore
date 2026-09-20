@@ -2,5 +2,10 @@
 /.worktrees/
 /.flatpak-builder/
 /build/
+# Local compatibility artifacts must remain outside the repository.
+/compat/
+/local-compat/
+openbubbles.so
+Mac.Hardware.Info.zip
 *.swp
 *.swo
