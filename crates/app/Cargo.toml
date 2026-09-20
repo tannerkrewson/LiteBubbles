@@ -9,3 +9,4 @@ rust-version.workspace = true
 adw = { package = "libadwaita", version = "0.8", features = ["v1_5"] }
 gtk = { package = "gtk4", version = "0.10" }
 litebubbles-core = { path = "../core" }
+litebubbles-mock-backend = { path = "../mock-backend" }
