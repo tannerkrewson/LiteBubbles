@@ -1,0 +1,10 @@
+CREATE INDEX idx_identities_account ON identities(account_id, id);
+CREATE INDEX idx_participants_conversation ON participants(conversation_id, id);
+CREATE INDEX idx_messages_conversation_order ON messages(conversation_id, sent_at, id);
+CREATE INDEX idx_message_parts_message_order ON message_parts(message_id, part_index);
+CREATE INDEX idx_reactions_message ON reactions(message_id, created_at, id);
+CREATE INDEX idx_mutations_message ON message_mutations(message_id, occurred_at, id);
+CREATE INDEX idx_delivery_receipts_message ON delivery_receipts(message_id, participant_id);
+CREATE INDEX idx_read_receipts_message ON read_receipts(message_id, participant_id);
+CREATE INDEX idx_extensions_owner ON extensions(owner_kind, owner_id, ordinal);
+CREATE INDEX idx_deduplication_object ON deduplication_keys(object_kind, object_id);
