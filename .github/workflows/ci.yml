@@ -32,7 +32,8 @@ jobs:
             pkg-config \
             libglib2.0-dev \
             libgtk-4-dev \
-            libadwaita-1-dev
+            libadwaita-1-dev \
+            protobuf-compiler
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
