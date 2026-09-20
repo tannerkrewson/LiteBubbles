@@ -16,7 +16,7 @@ exclude = ["vendor/rustpush"]
 [workspace.package]
 edition = "2024"
 license-file = "LICENSE"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [workspace.dependencies]
 async-trait = "0.1"

@@ -35,7 +35,7 @@ jobs:
             libadwaita-1-dev
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.85.0
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
