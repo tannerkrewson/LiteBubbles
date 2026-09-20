@@ -789,13 +789,15 @@ impl SetupState {
     }
 }
 
-type SetupListener = Box<dyn Fn(SetupState)>;
+type SetupListener = Rc<dyn Fn(SetupState)>;
+type SetupEffectListener = Rc<dyn Fn(SetupEffect)>;
 
 /// Shared state/controller handle for a [`SetupView`].
 #[derive(Clone)]
 pub struct SetupController {
     state: Rc<RefCell<SetupState>>,
     listeners: Rc<RefCell<Vec<SetupListener>>>,
+    effect_listeners: Rc<RefCell<Vec<SetupEffectListener>>>,
 }
 
 impl Default for SetupController {
@@ -816,6 +818,7 @@ impl SetupController {
         Self {
             state: Rc::new(RefCell::new(state)),
             listeners: Rc::new(RefCell::new(Vec::new())),
+            effect_listeners: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -828,8 +831,19 @@ impl SetupController {
     pub fn dispatch(&self, event: SetupEvent) -> SetupTransition {
         let transition = self.state.borrow_mut().transition(event);
         let snapshot = self.state();
-        for listener in self.listeners.borrow().iter() {
+        let listeners = self.listeners.borrow().clone();
+        for listener in listeners {
             listener(snapshot.clone());
+        }
+        let effect = match &transition {
+            SetupTransition::Applied(effect) => Some(effect.clone()),
+            SetupTransition::Ignored => None,
+        };
+        if let Some(effect) = effect {
+            let effect_listeners = self.effect_listeners.borrow().clone();
+            for listener in effect_listeners {
+                listener(effect.clone());
+            }
         }
         transition
     }
@@ -839,7 +853,19 @@ impl SetupController {
     where
         F: Fn(SetupState) + 'static,
     {
-        self.listeners.borrow_mut().push(Box::new(listener));
+        self.listeners.borrow_mut().push(Rc::new(listener));
+    }
+
+    /// Registers a callback for effects emitted at the backend boundary.
+    ///
+    /// The callback must schedule any backend response and later feed it back
+    /// with [`SetupEvent::Backend`]. It must not dispatch recursively while a
+    /// controller event is being delivered.
+    pub fn connect_effect<F>(&self, listener: F)
+    where
+        F: Fn(SetupEffect) + 'static,
+    {
+        self.effect_listeners.borrow_mut().push(Rc::new(listener));
     }
 }
 
@@ -853,6 +879,8 @@ impl SetupController {
 pub struct SetupView {
     root: gtk::Box,
     controller: SetupController,
+    leave_button: gtk::Button,
+    complete_button: gtk::Button,
 }
 
 impl SetupView {
@@ -863,6 +891,11 @@ impl SetupView {
             .orientation(gtk::Orientation::Vertical)
             .build();
         let header = adw::HeaderBar::new();
+        let leave_button = gtk::Button::builder()
+            .icon_name("go-previous-symbolic")
+            .tooltip_text("Back to conversations")
+            .build();
+        header.pack_start(&leave_button);
         let title = adw::WindowTitle::new("Set up LiteBubbles", "");
         header.set_title_widget(Some(&title));
         root.append(&header);
@@ -921,11 +954,17 @@ impl SetupView {
         connecting.append(&connection_label);
         stack.add_named(&connecting, Some(SetupStage::Connecting.page_name()));
 
-        let complete = status_page(
+        let complete = static_page(
             "Setup complete",
             "Your selected identity is connected and ready.",
             "emblem-ok-symbolic",
         );
+        let complete_button = gtk::Button::builder()
+            .label("Open conversations")
+            .css_classes(["suggested-action"])
+            .halign(gtk::Align::Center)
+            .build();
+        complete.append(&complete_button);
         stack.add_named(&complete, Some(SetupStage::Complete.page_name()));
 
         let error_page = adw::StatusPage::builder()
@@ -1022,7 +1061,12 @@ impl SetupView {
             &connection_label,
         );
 
-        Self { root, controller }
+        Self {
+            root,
+            controller,
+            leave_button,
+            complete_button,
+        }
     }
 
     /// Returns the widget to embed in an application shell.
@@ -1034,9 +1078,37 @@ impl SetupView {
     pub fn controller(&self) -> &SetupController {
         &self.controller
     }
+
+    /// Invokes `callback` when the user leaves setup for the conversation
+    /// shell, either from an in-progress setup or after completion.
+    pub fn connect_leave<F>(&self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        self.leave_button.connect_clicked(move |_| callback());
+    }
+
+    /// Invokes `callback` when the completed setup flow opens conversations.
+    pub fn connect_completed<F>(&self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        self.complete_button.connect_clicked(move |_| callback());
+    }
 }
 
 fn status_page(title: &str, description: &str, icon_name: &str) -> gtk::Box {
+    let page = static_page(title, description, icon_name);
+    let status = page
+        .first_child()
+        .and_then(|child| child.downcast::<adw::StatusPage>().ok())
+        .expect("status page contains its status widget");
+    let spinner = gtk::Spinner::builder().spinning(true).build();
+    status.set_child(Some(&spinner));
+    page
+}
+
+fn static_page(title: &str, description: &str, icon_name: &str) -> gtk::Box {
     let page = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .valign(gtk::Align::Center)
@@ -1048,8 +1120,6 @@ fn status_page(title: &str, description: &str, icon_name: &str) -> gtk::Box {
         .description(description)
         .vexpand(false)
         .build();
-    let spinner = gtk::Spinner::builder().spinning(true).build();
-    status.set_child(Some(&spinner));
     page.append(&status);
     page
 }

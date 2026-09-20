@@ -280,6 +280,32 @@ fn controller_notifies_with_snapshots_without_needing_gtk_main_wiring() {
 }
 
 #[test]
+fn controller_emits_backend_effects_without_leaking_setup_secrets() {
+    let controller = setup::SetupController::new();
+    let effects = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let effects_for_listener = effects.clone();
+    controller.connect_effect(move |effect| {
+        effects_for_listener
+            .borrow_mut()
+            .push(format!("{effect:?}"));
+    });
+
+    controller.dispatch(SetupEvent::Begin);
+    controller.dispatch(SetupEvent::SubmitActivation(ActivationInput::new(
+        "fixture-device",
+        "activation-secret-placeholder",
+        "provisioning-secret-placeholder",
+    )));
+
+    let effects = effects.borrow();
+    assert_eq!(effects.len(), 2);
+    assert_eq!(effects[0], "None");
+    assert!(effects[1].starts_with("Provision(ActivationInput"));
+    assert!(!effects[1].contains("activation-secret-placeholder"));
+    assert!(!effects[1].contains("provisioning-secret-placeholder"));
+}
+
+#[test]
 fn irrelevant_events_are_ignored_without_mutating_state() {
     let mut state = SetupState::new();
     let before = state.clone();

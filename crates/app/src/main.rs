@@ -2,7 +2,13 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use adw::prelude::*;
 use gtk::{gio, glib};
-use litebubbles::{TimelineModel, TimelineView, build_composer, build_timeline};
+use litebubbles::{
+    TimelineModel, TimelineView, build_composer, build_timeline,
+    setup::{
+        BackendUpdate, ConnectionState, IdentityOption, SetupController, SetupEffect, SetupEvent,
+        SetupView,
+    },
+};
 use litebubbles_core::{
     BackendEvent, BackendEventId, BackendEventKind, Conversation, ConversationId, ConversationKind,
     DeliveryState, Message, MessageId, MessagePart, ParticipantId, PersonId, ReadState, TextPart,
@@ -11,6 +17,8 @@ use litebubbles_core::{
 use litebubbles_mock_backend::{FixtureSet, MockBackend};
 
 const APPLICATION_ID: &str = "io.github.tannerkrewson.LiteBubbles";
+const SHELL_SETUP: &str = "setup";
+const SHELL_CONVERSATIONS: &str = "conversations";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ViewState {
@@ -402,6 +410,57 @@ fn install_mock_event_feed(
     });
 }
 
+/// Connects the UI-only setup reducer to deterministic synthetic responses.
+///
+/// This is the only setup backend used by the shell today. A real daemon
+/// adapter will replace this function and continue to send only
+/// `SetupEvent::Backend` updates across the same boundary. Responses are
+/// scheduled after the controller listener returns so no listener recursively
+/// dispatches while the controller's `RefCell` state is borrowed.
+fn install_synthetic_setup_backend(controller: &SetupController) {
+    let controller_for_effects = controller.clone();
+    controller.connect_effect(move |effect| {
+        let update = match effect {
+            SetupEffect::Provision(_) => Some(BackendUpdate::ProvisioningAccepted),
+            SetupEffect::Authenticate(_) => Some(BackendUpdate::LoginRequiresTwoFactor),
+            SetupEffect::VerifyTwoFactor(_) => Some(BackendUpdate::LoginSucceeded {
+                identities: synthetic_setup_identities(),
+            }),
+            SetupEffect::ConfirmIdentity(_) => {
+                Some(BackendUpdate::ConnectionChanged(ConnectionState::Connected))
+            }
+            SetupEffect::Reconnect => {
+                Some(BackendUpdate::ConnectionChanged(ConnectionState::Connected))
+            }
+            SetupEffect::None => None,
+        };
+        let Some(update) = update else {
+            return;
+        };
+        let controller = controller_for_effects.clone();
+        glib::timeout_add_local_once(Duration::from_millis(120), move || {
+            controller.dispatch(SetupEvent::Backend(update));
+        });
+    });
+}
+
+fn synthetic_setup_identities() -> Vec<IdentityOption> {
+    vec![
+        IdentityOption::new(
+            "synthetic-primary",
+            "Primary identity",
+            Some("primary@placeholder.invalid".to_owned()),
+        )
+        .expect("synthetic identity is valid"),
+        IdentityOption::new(
+            "synthetic-secondary",
+            "Secondary identity",
+            Some("secondary@placeholder.invalid".to_owned()),
+        )
+        .expect("synthetic identity is valid"),
+    ]
+}
+
 fn main() -> glib::ExitCode {
     adw::init().expect("libadwaita must initialize");
 
@@ -459,16 +518,44 @@ fn build_window(application: &adw::Application) {
     split_view.set_sidebar(Some(&sidebar_page));
     split_view.set_content(Some(&content_page));
 
+    let setup_controller = SetupController::new();
+    let setup_view = SetupView::new(&setup_controller);
+    install_synthetic_setup_backend(&setup_controller);
+
     let narrow_breakpoint = adw::Breakpoint::new(
         adw::BreakpointCondition::parse("max-width: 700sp")
             .expect("the narrow-window breakpoint is valid"),
     );
     narrow_breakpoint.add_setter(&split_view, "collapsed", Some(&true.to_value()));
     window.add_breakpoint(narrow_breakpoint);
-    window.set_content(Some(&split_view));
+    let shell_stack = gtk::Stack::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .transition_type(gtk::StackTransitionType::Crossfade)
+        .build();
+    shell_stack.add_named(setup_view.widget(), Some(SHELL_SETUP));
+    shell_stack.add_named(&split_view, Some(SHELL_CONVERSATIONS));
+    shell_stack.set_visible_child_name(SHELL_CONVERSATIONS);
+    window.set_content(Some(&shell_stack));
+
+    let shell_for_leave = shell_stack.clone();
+    setup_view.connect_leave(move || {
+        shell_for_leave.set_visible_child_name(SHELL_CONVERSATIONS);
+    });
+    let shell_for_complete = shell_stack.clone();
+    setup_view.connect_completed(move || {
+        shell_for_complete.set_visible_child_name(SHELL_CONVERSATIONS);
+    });
 
     install_window_actions(&window, &model, &split_view, &content_stack, &search_entry);
-    install_application_actions(application, &window, &model, &split_view, &content_stack);
+    install_application_actions(
+        application,
+        &window,
+        &model,
+        &split_view,
+        &content_stack,
+        &shell_stack,
+    );
     install_mock_event_feed(backend, timelines);
     window.present();
 }
@@ -869,6 +956,7 @@ fn content_toolbar(content_stack: &gtk::Stack, model: &Rc<RefCell<UiModel>>) -> 
 
 fn application_menu() -> gio::Menu {
     let menu = gio::Menu::new();
+    menu.append(Some("Set up LiteBubbles"), Some("app.setup"));
     menu.append(Some("New conversation"), Some("app.new-conversation"));
     menu.append(Some("Search conversations"), Some("win.search"));
     menu.append(Some("Keyboard shortcuts"), Some("app.shortcuts"));
@@ -925,7 +1013,15 @@ fn install_application_actions(
     model: &Rc<RefCell<UiModel>>,
     split_view: &adw::NavigationSplitView,
     content_stack: &gtk::Stack,
+    shell_stack: &gtk::Stack,
 ) {
+    let setup = gio::SimpleAction::new("setup", None);
+    let shell_for_setup = shell_stack.clone();
+    setup.connect_activate(move |_, _| {
+        shell_for_setup.set_visible_child_name(SHELL_SETUP);
+    });
+    application.add_action(&setup);
+
     let new_conversation = gio::SimpleAction::new("new-conversation", None);
     let model_for_new = Rc::clone(model);
     let split_for_new = split_view.clone();

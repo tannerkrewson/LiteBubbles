@@ -5,6 +5,7 @@
 //! with deterministic core-domain values without coupling tests to a window.
 
 pub mod composer;
+pub mod setup;
 pub mod timeline;
 
 pub use composer::{
