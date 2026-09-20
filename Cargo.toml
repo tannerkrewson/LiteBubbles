@@ -8,6 +8,7 @@ members = [
     "crates/daemon",
     "crates/app",
 ]
+exclude = ["vendor/rustpush"]
 
 [workspace.package]
 edition = "2024"
@@ -20,3 +21,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
+
+# rustpush declares this patch in its own manifest. Cargo only applies patches
+# from the workspace root, so repeat it here to keep h3-quinn and rustpush on
+# the same pinned nested-gitlink Quinn implementation.
+[patch.crates-io]
+quinn = { path = "vendor/rustpush/third_party/quinn/quinn" }

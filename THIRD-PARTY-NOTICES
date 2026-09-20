@@ -1,3 +1,11 @@
 Third-party dependency notices will be recorded here as dependencies are pinned
 and audited. LiteBubbles does not copy source code, resources, icons, CSS, or UI
 templates from the Fractal reference project.
+
+OpenBubbles/rustpush is included as the git submodule `vendor/rustpush` at
+`f35c4ee062b3c3eae54dc96b89b90ee99f5e1d0c`, with its nested gitlinks required
+for the Cargo path dependencies. That upstream checkout is licensed under
+SSPL-1.0. Its `LICENSE.exceptions` grants a special unrestricted-dealing
+exception to OpenBubbles only; it does not name LiteBubbles, so legal review is
+required before distribution or reliance on that exception. The submodule is
+source-only and is not copied into LiteBubbles-owned crates.
