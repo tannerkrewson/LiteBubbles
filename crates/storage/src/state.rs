@@ -93,6 +93,14 @@ impl AppPaths {
         self.data_dir.join("litebubbles.sqlite3")
     }
 
+    /// Create the application data directory before opening the SQLite file.
+    ///
+    /// Cache and configuration directories are created by the components that
+    /// first need them; the daemon must create only its durable data parent.
+    pub fn ensure_data_dir(&self) -> Result<(), StateError> {
+        fs::create_dir_all(&self.data_dir).map_err(|_| StateError::Create { area: "data" })
+    }
+
     /// Remove app-owned data and cache state while retaining user preferences
     /// in the separate config directory. The caller separately deletes the
     /// account's Secret Service item through [`SecretStore`].
@@ -630,6 +638,8 @@ pub enum StateError {
     InvalidSecretKey,
     #[error("failed to purge {area} state")]
     Purge { area: &'static str },
+    #[error("failed to create {area} state directory")]
+    Create { area: &'static str },
     #[error("secret operation failed: {0}")]
     SecretStore(#[source] SecretStoreError),
 }
@@ -678,6 +688,27 @@ mod tests {
             paths.config_dir(),
             Path::new("/synthetic/home/.config/litebubbles")
         );
+    }
+
+    #[test]
+    fn ensure_data_dir_creates_only_the_durable_state_parent() {
+        let root = tempdir().expect("tempdir");
+        let data_home = root.path().join("data");
+        let cache_home = root.path().join("cache");
+        let config_home = root.path().join("config");
+        let paths = AppPaths::from_values(
+            root.path(),
+            Some(&data_home),
+            Some(&cache_home),
+            Some(&config_home),
+        )
+        .expect("paths");
+
+        paths.ensure_data_dir().expect("data directory");
+
+        assert!(paths.data_dir().is_dir());
+        assert!(!paths.cache_dir().exists());
+        assert!(!paths.config_dir().exists());
     }
 
     #[test]

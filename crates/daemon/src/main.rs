@@ -42,7 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database = match database {
         Some(path) => path,
-        None => AppPaths::from_environment()?.database_path(),
+        None => {
+            let paths = AppPaths::from_environment()?;
+            paths.ensure_data_dir()?;
+            paths.database_path()
+        }
     };
     futures_lite::future::block_on(run_daemon(database))
 }
