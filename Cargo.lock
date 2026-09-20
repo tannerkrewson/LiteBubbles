@@ -801,6 +801,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "litebubbles-mock-backend"
+version = "0.1.0"
+dependencies = [
+ "litebubbles-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "litebubbles-protocol"
 version = "0.1.0"
 dependencies = [
