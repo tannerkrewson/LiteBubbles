@@ -6,6 +6,8 @@ members = [
     "crates/mock-backend",
     "crates/storage",
     "crates/rustpush-backend",
+    "crates/validation-provider",
+    "crates/validation-helper",
     "crates/daemon",
     "crates/app",
 ]
@@ -17,6 +19,7 @@ license-file = "LICENSE"
 rust-version = "1.85"
 
 [workspace.dependencies]
+async-trait = "0.1"
 anyhow = "1"
 base64 = "0.22"
 prost = "0.13"

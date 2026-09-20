@@ -72,11 +72,13 @@ done
 
 app_source=${build_dir}/litebubbles
 daemon_source=${build_dir}/litebubblesd
+validation_component_source=${build_dir}/litebubbles-validation-component
+validation_helper_source=${build_dir}/litebubbles-validation-helper
 desktop_template=${repo_root}/data/io.github.tannerkrewson.LiteBubbles.desktop.in
 dbus_template=${repo_root}/data/io.github.tannerkrewson.LiteBubbles.Backend.service.in
 systemd_template=${repo_root}/data/litebubblesd.service
 
-for executable in "${app_source}" "${daemon_source}"; do
+for executable in "${app_source}" "${daemon_source}" "${validation_component_source}" "${validation_helper_source}"; do
     [[ -f ${executable} && -x ${executable} ]] || die "missing executable build artifact: ${executable}"
 done
 for metadata in "${desktop_template}" "${dbus_template}" "${systemd_template}"; do
@@ -148,6 +150,8 @@ daemon_exec=$(quote_exec_arg "${bin_dir}/litebubblesd")
 
 replace_file "${app_source}" "${bin_dir}/litebubbles" 0755
 replace_file "${daemon_source}" "${bin_dir}/litebubblesd" 0755
+replace_file "${validation_component_source}" "${bin_dir}/litebubbles-validation-component" 0755
+replace_file "${validation_helper_source}" "${bin_dir}/litebubbles-validation-helper" 0755
 render_file "${desktop_template}" "${desktop_file}" '@LITEBUBBLES_EXEC@' "${app_exec}"
 render_file "${dbus_template}" "${dbus_file}" '@LITEBUBBLES_DAEMON_EXEC@' "${daemon_exec}"
 replace_file "${systemd_template}" "${systemd_file}" 0644

@@ -9,3 +9,8 @@ separate legal review. LiteBubbles records the exact revision as a public
 submodule and applies a small source patch for public compilation; the patch
 does not add FairPlay certificates, private keys, or OpenBubbles binaries.
 Genuine production signing remains a separate reviewed boundary.
+
+The audited `stevesoltys/openbubbles-build-modules` reference repository is
+MIT-licensed. LiteBubbles uses its publicly documented validation ABI facts as
+an architectural reference and does not copy its source, build outputs, or
+the externally supplied OpenBubbles component.

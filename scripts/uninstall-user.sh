@@ -50,6 +50,8 @@ done
 paths=(
     "${HOME}/.local/bin/litebubbles"
     "${HOME}/.local/bin/litebubblesd"
+    "${HOME}/.local/bin/litebubbles-validation-component"
+    "${HOME}/.local/bin/litebubbles-validation-helper"
     "${data_home}/applications/${application_id}.desktop"
     "${data_home}/dbus-1/services/${backend_bus_name}.service"
     "${config_home}/systemd/user/${service_name}"

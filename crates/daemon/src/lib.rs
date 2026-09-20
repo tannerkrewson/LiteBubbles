@@ -30,7 +30,7 @@ use tracing::{debug, error, info, warn};
 use zbus::object_server::SignalEmitter;
 
 /// Exact blocker shared by service errors, sync state, and documentation.
-pub const RUSTPUSH_BLOCKER: &str = "live rustpush adapter unavailable: LB-050 blocks the audited rustpush build because ten FairPlay certificate/key pairs are missing upstream; see docs/lb-008-blocker.md";
+pub const RUSTPUSH_BLOCKER: &str = "live rustpush adapter unavailable: LB-050 public compilation is ready, but the production FairPlay signer and Apple account setup remain incomplete; see docs/validation-provider.md and docs/lb-008-blocker.md";
 
 /// Errors returned by a backend adapter.  These deliberately contain no
 /// account identifiers, message bodies, credentials, or remote addresses.
