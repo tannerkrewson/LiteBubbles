@@ -51,10 +51,15 @@ provide an official release archive they obtained themselves.
 After building and installing LiteBubbles, run:
 
 ```sh
-~/.local/bin/litebubbles-validation-component install \
+./scripts/setup-production.sh install \
   /path/to/official/bluebubbles-linux-x86_64.tar
-~/.local/bin/litebubbles-validation-component status
+./scripts/setup-production.sh status
 ```
+
+`scripts/install-user.sh` also installs the wrapper as
+`~/.local/bin/litebubbles-setup-production`. The wrapper invokes the existing
+`litebubbles-validation-component` installer and prints the separate FairPlay
+device-activation requirement after both install and status checks.
 
 The installer extracts only the one required `openbubbles.so`, verifies its
 exact SHA-256, writes a small local manifest, and installs it below:

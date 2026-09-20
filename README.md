@@ -77,10 +77,14 @@ OpenBubbles release archive yourself, install and verify only its required
 component with:
 
 ```sh
-~/.local/bin/litebubbles-validation-component install \
+./scripts/setup-production.sh install \
   /path/to/official/bluebubbles-linux-x86_64.tar
-~/.local/bin/litebubbles-validation-component status
+./scripts/setup-production.sh status
 ```
+
+The user installer also installs this wrapper as
+`~/.local/bin/litebubbles-setup-production`. Both forms delegate to the
+hash-validating `litebubbles-validation-component` command.
 
 The command verifies the supported version and SHA-256, installs the opaque
 library in the user data directory, and never extracts or displays private
@@ -89,6 +93,12 @@ not established a redistribution grant for that artifact. Genuine Mac
 activation information is entered separately as the base64 payload produced by
 Mac Hardware Info; see [`docs/validation-provider.md`](docs/validation-provider.md)
 and [`docs/hardware-input.md`](docs/hardware-input.md).
+
+Validation-component readiness is not complete production readiness. Real
+Apple activation still requires a separate production FairPlay
+device-activation signer. The public build does not provide or configure that
+signer, and the development dummy is not a production credential; LB-064 must
+be resolved before LiteBubbles can report real activation as available.
 
 Remove only the files installed by this workflow with:
 

@@ -74,6 +74,7 @@ app_source=${build_dir}/litebubbles
 daemon_source=${build_dir}/litebubblesd
 validation_component_source=${build_dir}/litebubbles-validation-component
 validation_helper_source=${build_dir}/litebubbles-validation-helper
+production_setup_source=${repo_root}/scripts/setup-production.sh
 desktop_template=${repo_root}/data/io.github.tannerkrewson.LiteBubbles.desktop.in
 dbus_template=${repo_root}/data/io.github.tannerkrewson.LiteBubbles.Backend.service.in
 systemd_template=${repo_root}/data/litebubblesd.service
@@ -84,6 +85,8 @@ done
 for metadata in "${desktop_template}" "${dbus_template}" "${systemd_template}"; do
     [[ -f ${metadata} ]] || die "missing packaging metadata: ${metadata}"
 done
+[[ -f ${production_setup_source} && -x ${production_setup_source} ]] || \
+    die "missing executable production setup wrapper: ${production_setup_source}"
 
 bin_dir=${HOME}/.local/bin
 desktop_dir=${data_home}/applications
@@ -152,6 +155,7 @@ replace_file "${app_source}" "${bin_dir}/litebubbles" 0755
 replace_file "${daemon_source}" "${bin_dir}/litebubblesd" 0755
 replace_file "${validation_component_source}" "${bin_dir}/litebubbles-validation-component" 0755
 replace_file "${validation_helper_source}" "${bin_dir}/litebubbles-validation-helper" 0755
+replace_file "${production_setup_source}" "${bin_dir}/litebubbles-setup-production" 0755
 render_file "${desktop_template}" "${desktop_file}" '@LITEBUBBLES_EXEC@' "${app_exec}"
 render_file "${dbus_template}" "${dbus_file}" '@LITEBUBBLES_DAEMON_EXEC@' "${daemon_exec}"
 replace_file "${systemd_template}" "${systemd_file}" 0644
@@ -177,3 +181,4 @@ fi
 printf 'Installed LiteBubbles for the current user.\n'
 printf '  Application: %s\n' "${desktop_file}"
 printf '  Daemon unit: %s\n' "${systemd_file}"
+printf '  Production setup: %s\n' "${bin_dir}/litebubbles-setup-production"
