@@ -6,5 +6,6 @@ license-file.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-litebubbles-core = { path = "../core" }
 serde.workspace = true
+zbus = { version = "=5.13.0", features = ["option-as-array"] }
+zbus-macros = { package = "zbus_macros", version = "=5.13.0" }
