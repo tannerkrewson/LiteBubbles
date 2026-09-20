@@ -201,7 +201,7 @@ impl ValidationSession {
     }
 }
 
-pub trait PendingValidation {
+pub trait PendingValidation: Send {
     fn finish(
         self: Box<Self>,
         apple_session_info: Vec<u8>,
@@ -394,11 +394,20 @@ impl OpenBubblesValidationProvider {
     pub fn component_dir(&self) -> &Path {
         &self.component_dir
     }
+
+    /// Construct the production provider from the installed user-local
+    /// component and the helper installed beside the LiteBubbles binaries.
+    pub fn from_default_paths() -> Result<Self, ValidationError> {
+        let component_dir = default_component_dir()?;
+        let helper_path = default_helper_path()?;
+        Self::new(component_dir, helper_path)
+    }
 }
 
 impl ValidationProvider for OpenBubblesValidationProvider {
     fn is_available(&self) -> bool {
-        validate_component_directory(&self.component_dir).is_ok()
+        cfg!(target_arch = "x86_64")
+            && validate_component_directory(&self.component_dir).is_ok()
             && validate_helper_path(&self.helper_path).is_ok()
     }
 
@@ -728,6 +737,21 @@ pub fn default_compat_root() -> Result<PathBuf, ValidationError> {
     Ok(data_home.join("litebubbles/compat"))
 }
 
+pub fn default_component_dir() -> Result<PathBuf, ValidationError> {
+    Ok(default_compat_root()?.join(EXPECTED_COMPONENT_VERSION))
+}
+
+/// Resolve the helper installed alongside the current LiteBubbles executable.
+/// Keeping this path deterministic prevents production code from loading an
+/// arbitrary helper selected through an environment variable or UI field.
+pub fn default_helper_path() -> Result<PathBuf, ValidationError> {
+    let executable = std::env::current_exe().map_err(|_| ValidationError::HelperUnavailable)?;
+    let directory = executable
+        .parent()
+        .ok_or(ValidationError::HelperUnavailable)?;
+    validate_helper_path(directory.join("litebubbles-validation-helper"))
+}
+
 pub fn install_official_artifact(
     archive_path: impl AsRef<Path>,
     compat_root: impl AsRef<Path>,
@@ -778,7 +802,7 @@ pub fn install_official_artifact(
 
     let compat_root = compat_root.as_ref();
     fs::create_dir_all(compat_root).map_err(|_| ValidationError::InstallIo)?;
-    set_private_mode(compat_root, true).map_err(|_| ValidationError::InstallIo)?;
+    set_private_mode(compat_root).map_err(|_| ValidationError::InstallIo)?;
     let target = compat_root.join(EXPECTED_COMPONENT_VERSION);
     if target.exists() {
         return Err(ValidationError::ComponentAlreadyInstalled);
@@ -798,7 +822,7 @@ pub fn install_official_artifact(
         .write_all(&library_bytes)
         .and_then(|_| library_file.sync_all())
         .map_err(|_| ValidationError::InstallIo)?;
-    set_private_mode(&library_path, false).map_err(|_| ValidationError::InstallIo)?;
+    set_private_mode(&library_path).map_err(|_| ValidationError::InstallIo)?;
 
     let manifest = ComponentManifest::supported();
     let manifest_bytes =
@@ -814,7 +838,7 @@ pub fn install_official_artifact(
         .and_then(|_| manifest_file.write_all(b"\n"))
         .and_then(|_| manifest_file.sync_all())
         .map_err(|_| ValidationError::InstallIo)?;
-    set_private_mode(&manifest_path, false).map_err(|_| ValidationError::InstallIo)?;
+    set_private_mode(&manifest_path).map_err(|_| ValidationError::InstallIo)?;
 
     let temporary_path = temporary.keep();
     fs::rename(temporary_path, &target).map_err(|_| ValidationError::InstallIo)?;
@@ -841,7 +865,9 @@ fn open_archive_reader(path: &Path) -> Result<Box<dyn Read>, ValidationError> {
     let is_gzip = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("gz"));
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("gz") || extension.eq_ignore_ascii_case("tgz")
+        });
     if is_gzip {
         Ok(Box::new(GzDecoder::new(file)))
     } else {
@@ -864,12 +890,11 @@ fn validate_archive_path(path: &Path) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn set_private_mode(path: &Path, directory: bool) -> io::Result<()> {
+fn set_private_mode(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = if directory { 0o700 } else { 0o700 };
-        fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     }
     Ok(())
 }
@@ -951,8 +976,7 @@ mod tests {
         fs::write(temp.path().join(EXPECTED_LIBRARY_NAME), b"not-a-library").expect("library");
         assert_eq!(
             validate_component_directory(temp.path())
-                .err()
-                .expect("unsupported")
+                .expect_err("unsupported")
                 .to_string(),
             "the validation component version is not supported"
         );
@@ -974,8 +998,7 @@ mod tests {
         fs::write(temp.path().join(EXPECTED_LIBRARY_NAME), b"not-a-library").expect("library");
         assert_eq!(
             validate_component_directory(temp.path())
-                .err()
-                .expect("bad hash")
+                .expect_err("bad hash")
                 .to_string(),
             "the validation component library hash is not supported"
         );
@@ -1076,8 +1099,7 @@ mod tests {
         let provider = test_provider(&temp, &helper);
         let error = provider
             .begin_with_component_dir(temp.path(), request())
-            .err()
-            .expect("crashed helper");
+            .expect_err("crashed helper");
         assert_eq!(error, ValidationError::HelperCrashed);
     }
 
@@ -1090,8 +1112,7 @@ mod tests {
         let provider = test_provider(&temp, &helper);
         let error = provider
             .begin_with_component_dir(temp.path(), request())
-            .err()
-            .expect("malformed helper");
+            .expect_err("malformed helper");
         assert_eq!(error, ValidationError::MalformedOutput);
         assert!(!error.to_string().contains("private-payload"));
     }

@@ -1,6 +1,6 @@
 use litebubbles_validation_provider::{
     EXPECTED_COMPONENT_VERSION, default_compat_root, install_official_artifact,
-    remove_installed_component,
+    remove_installed_component, validate_component_directory,
 };
 use std::env;
 use std::path::PathBuf;
@@ -81,15 +81,19 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         "status" => {
             let path = compat_root.join(EXPECTED_COMPONENT_VERSION);
-            println!(
-                "{}",
-                if path.is_dir() {
-                    "A validation component directory is present."
-                } else {
-                    "No validation component is installed."
+            match validate_component_directory(&path) {
+                Ok(component) => {
+                    println!(
+                        "Validation component {EXPECTED_COMPONENT_VERSION} is ready at {}.",
+                        component.root().display()
+                    );
+                    Ok(())
                 }
-            );
-            Ok(())
+                Err(error) => {
+                    println!("Apple compatibility support is not ready: {error}.");
+                    Err(error.to_string())
+                }
+            }
         }
         _ => {
             usage();

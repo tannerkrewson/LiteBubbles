@@ -50,6 +50,8 @@ jobs:
           --package litebubbles-mock-backend
           --package litebubbles-storage
           --package litebubbles-rustpush-backend
+          --package litebubbles-validation-provider
+          --package litebubbles-validation-helper
           --package litebubblesd
           --package litebubbles
           -- --check

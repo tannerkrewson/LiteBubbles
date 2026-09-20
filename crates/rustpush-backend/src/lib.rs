@@ -4,8 +4,10 @@
 //! rustpush revision. Upstream types stay behind this boundary.
 
 pub mod hardware;
+pub mod validation;
 
 pub use hardware::{HardwareInputError, MacHardwareConfig, MacHardwareInput, MacSoftwareInfo};
+pub use validation::{ValidationBackedMacOsConfig, production_validation_provider};
 
 use thiserror::Error;
 

@@ -63,8 +63,32 @@ The installer places `litebubbles` and `litebubblesd` in
 `$XDG_DATA_HOME` (or `$HOME/.local/share`), and installs the user unit below
 `$XDG_CONFIG_HOME/systemd/user` (or `$HOME/.config/systemd/user`). It enables
 the daemon for the user session so it is independent of the application
-window's lifetime. Use `./scripts/install-user.sh --no-start` when inspecting
-the generated files without starting the service.
+window's lifetime. It also installs the validation setup command and its
+isolated helper; the production compatibility component itself is never part
+of the build or repository. Use `./scripts/install-user.sh --no-start` when
+inspecting the generated files without starting the service.
+
+### Apple production validation
+
+Public builds and CI do not need FairPlay files, Apple credentials, or a Mac.
+They cannot perform real Apple activation until a production validation
+component is installed. If you have obtained a compatible official
+OpenBubbles release archive yourself, install and verify only its required
+component with:
+
+```sh
+~/.local/bin/litebubbles-validation-component install \
+  /path/to/official/bluebubbles-linux-x86_64.tar
+~/.local/bin/litebubbles-validation-component status
+```
+
+The command verifies the supported version and SHA-256, installs the opaque
+library in the user data directory, and never extracts or displays private
+FairPlay material. Automatic download is not enabled because LiteBubbles has
+not established a redistribution grant for that artifact. Genuine Mac
+activation information is entered separately as the base64 payload produced by
+Mac Hardware Info; see [`docs/validation-provider.md`](docs/validation-provider.md)
+and [`docs/hardware-input.md`](docs/hardware-input.md).
 
 Remove only the files installed by this workflow with:
 
@@ -87,5 +111,6 @@ The backend-independent LB-010 service boundary now owns the versioned D-Bus
 name and storage-backed state. Public rustpush compilation is implemented by
 the audited, separable preparation patch documented in
 [`docs/lb-060-public-build.md`](docs/lb-060-public-build.md); genuine Apple
-FairPlay signing remains explicitly unavailable until the production provider
-work in LB-064 is complete.
+FairPlay signing remains explicitly unavailable until the separate signer
+boundary in LB-064 is complete. The validation provider itself is documented
+in [`docs/validation-provider.md`](docs/validation-provider.md).

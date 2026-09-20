@@ -12,8 +12,12 @@ rust-version.workspace = true
 development-dummy-fairplay = ["rustpush/dummy-fairplay"]
 
 [dependencies]
+async-trait.workspace = true
 base64.workspace = true
 litebubbles-core = { path = "../core" }
 prost.workspace = true
-rustpush = { package = "rustpush", path = "../../vendor/rustpush", default-features = false, features = ["remote-anisette-v3"] }
+litebubbles-validation-provider = { path = "../validation-provider" }
+plist = "1.7"
+rustpush = { package = "rustpush", path = "../../vendor/rustpush", default-features = false, features = ["remote-anisette-v3", "macos-validation-data"] }
+serde.workspace = true
 thiserror.workspace = true

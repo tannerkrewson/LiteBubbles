@@ -68,11 +68,6 @@ index d9b2d36..edc89e3 100644
  }
  
  pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, PushError> {
-@@ -139,4 +117,3 @@ pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, Pu
-         private: key
-     })
- }
--
 diff --git a/src/error.rs b/src/error.rs
 index 9452961..d7a89e3 100644
 --- a/src/error.rs
@@ -87,3 +82,24 @@ index 9452961..d7a89e3 100644
 +    DummyFairplayUnavailable,
      #[error("Cryptography error: {0}")]
      SSLError(#[from] ErrorStack),
+diff --git a/src/lib.rs b/src/lib.rs
+index 0b64545..715d661 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -23,6 +23,7 @@ pub use icloud::pcs;
+ pub use icloud::pcs;
+ 
+ pub use util::CompactECKey;
++pub use util::{get_bag, plist_to_buf, IDS_BAG, REQWEST};
+ 
+ #[cfg(feature = "macos-validation-data")]
+ pub mod macos;
+@@ -39,7 +40,7 @@ use std::fmt::Debug;
+ pub use icloud_auth::{DefaultAnisetteProvider, FetchedToken, PersistAccountData, GenerateVerificationTokenRequest, default_provider, ArcAnisetteClient, LoginClientInfo, LoginState, AppleAccount, VerifyBody, TrustedPhoneNumber};
+ 
+ pub use util::{DebugRwLock, DebugMutex};
+-use activation::ActivationInfo;
++pub use activation::ActivationInfo;
+ pub use aps::{APSConnectionResource, APSConnection, APSMessage, APSState};
+ use async_trait::async_trait;
+ pub use auth::{request_update_account, TokenProviderState, UpdateAccountFinish, MobileMeDelegateResponse};

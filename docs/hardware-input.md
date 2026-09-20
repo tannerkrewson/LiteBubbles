@@ -24,6 +24,10 @@ The setup flow is intentionally manual-first:
    been entered; any later renewal requirement is determined by upstream
    rustpush and Apple services.
 
+When retained between runs, the payload belongs in the GNOME Secret Service
+through the storage boundary described in `docs/validation-provider.md`, not
+in SQLite or a configuration file.
+
 `MB...` sharing codes are not accepted. They require the OpenBubbles sharing
 service, so LiteBubbles reports an actionable error asking for the base64
 payload instead of contacting that service. Hardware values are backend-owned

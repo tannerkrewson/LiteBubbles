@@ -122,5 +122,24 @@ an existing OpenBubbles installation.
 - LB-063 (#59): provider/hardware integration with authentication, IDS, and APS.
 - LB-064 (#62): runtime FairPlay signer boundary and separate review.
 
+## Current implementation status
+
+The public rustpush build path is complete: `scripts/prepare-rustpush.sh`
+applies the minimal auditable patch and CI uses it without private files.
+`litebubbles-validation-provider` now defines the backend-only provider
+boundary, and `OpenBubblesValidationProvider` uses a hash- and version-checked
+user-supplied `openbubbles.so` through the isolated
+`litebubbles-validation-helper` process. The backend exposes a constructor for
+the default installed provider, while GTK, D-Bus, core models, and SQLite do
+not receive provider or key types.
+
+Mac Hardware Info payloads are parsed independently by
+`litebubbles-rustpush-backend` and persisted through the Secret Service
+boundary when setup state is retained. No real component, Apple credential, or
+hardware payload was used in tests. Consequently, this work establishes the
+public build and production integration boundary but does not claim successful
+FairPlay device activation, IDS registration, or APS connection; those remain
+tracked in LB-064 and LB-063.
+
 Until the last boundary is resolved, LiteBubbles must report production Apple
 activation as unavailable rather than treating dummy material as valid.

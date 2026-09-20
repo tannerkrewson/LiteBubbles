@@ -135,6 +135,12 @@ impl SecretKey {
         Self::new("apple", account)
     }
 
+    /// The genuine-Mac activation payload is kept separate from Apple login
+    /// credentials, but uses the same Secret Service protection.
+    pub fn apple_hardware(account: impl Into<String>) -> Result<Self, StateError> {
+        Self::new("apple-hardware", account)
+    }
+
     pub fn new(service: impl Into<String>, account: impl Into<String>) -> Result<Self, StateError> {
         let service = service.into();
         let account = account.into();
@@ -614,6 +620,69 @@ where
         &self.paths
     }
 
+    /// Store the base64 payload produced by Mac Hardware Info in the Secret
+    /// Service. The storage layer does not parse or log the sensitive value.
+    pub async fn save_hardware_input(
+        &self,
+        account: impl Into<String>,
+        payload: SecretValue,
+    ) -> Result<(), StateError> {
+        let key = SecretKey::apple_hardware(account)?;
+        self.secrets
+            .set(&key, payload)
+            .await
+            .map_err(StateError::SecretStore)
+    }
+
+    /// Load a previously saved Mac Hardware Info payload without putting it in
+    /// ordinary application state.
+    pub async fn load_hardware_input(
+        &self,
+        account: impl Into<String>,
+    ) -> Result<Option<SecretValue>, StateError> {
+        let key = SecretKey::apple_hardware(account)?;
+        self.secrets
+            .get(&key)
+            .await
+            .map_err(StateError::SecretStore)
+    }
+
+    /// Remove only the saved Mac Hardware Info payload for an account.
+    pub async fn delete_hardware_input(
+        &self,
+        account: impl Into<String>,
+    ) -> Result<bool, StateError> {
+        let key = SecretKey::apple_hardware(account)?;
+        self.secrets
+            .delete(&key)
+            .await
+            .map_err(StateError::SecretStore)
+    }
+
+    /// Sign out and remove both Apple credentials and the matching hardware
+    /// activation payload.
+    pub async fn sign_out_account(
+        &self,
+        account: impl Into<String>,
+    ) -> Result<PurgeReport, StateError> {
+        let account = account.into();
+        let apple_key = SecretKey::apple(account.clone())?;
+        let hardware_key = SecretKey::apple_hardware(account)?;
+        let apple_deleted = self
+            .secrets
+            .delete(&apple_key)
+            .await
+            .map_err(StateError::SecretStore)?;
+        let hardware_deleted = self
+            .secrets
+            .delete(&hardware_key)
+            .await
+            .map_err(StateError::SecretStore)?;
+        let mut report = self.paths.purge_local_state()?;
+        report.secret_deleted = apple_deleted || hardware_deleted;
+        Ok(report)
+    }
+
     pub async fn sign_out(&self, key: &SecretKey) -> Result<PurgeReport, StateError> {
         let secret_deleted = self
             .secrets
@@ -729,6 +798,7 @@ mod tests {
     #[test]
     fn secret_debug_display_and_diagnostics_are_redacted() {
         let key = SecretKey::apple("synthetic-account").expect("key");
+        let hardware_key = SecretKey::apple_hardware("synthetic-account").expect("key");
         let value = SecretValue::from_bytes(b"synthetic-secret".to_vec());
         let diagnostic = Diagnostic {
             component: "credential-boundary",
@@ -738,6 +808,8 @@ mod tests {
         for rendered in [
             format!("{key:?}"),
             key.to_string(),
+            format!("{hardware_key:?}"),
+            hardware_key.to_string(),
             format!("{value:?}"),
             value.to_string(),
             diagnostic.to_string(),
@@ -809,6 +881,79 @@ mod tests {
         assert!(
             block_on(store.get(&key))
                 .expect("get after sign out")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn hardware_input_round_trips_in_secret_store_and_sign_out_removes_it() {
+        let root = tempdir().expect("tempdir");
+        let paths = AppPaths::from_values(
+            root.path(),
+            Some(&root.path().join("data")),
+            Some(&root.path().join("cache")),
+            Some(&root.path().join("config")),
+        )
+        .expect("paths");
+        let store = MemorySecretStore::default();
+        let session = SessionState::new(paths, store.clone());
+        let payload = SecretValue::from_bytes(b"synthetic-OABS-payload".to_vec());
+
+        block_on(session.save_hardware_input("synthetic-account", payload.clone()))
+            .expect("save hardware input");
+        assert_eq!(
+            block_on(session.load_hardware_input("synthetic-account"))
+                .expect("load hardware input")
+                .expect("stored hardware input"),
+            payload
+        );
+        assert!(
+            block_on(session.delete_hardware_input("synthetic-account"))
+                .expect("delete hardware input")
+        );
+        assert!(
+            block_on(session.load_hardware_input("synthetic-account"))
+                .expect("load after delete")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn account_sign_out_removes_credential_and_hardware_secrets() {
+        let root = tempdir().expect("tempdir");
+        let data_home = root.path().join("data");
+        let cache_home = root.path().join("cache");
+        let config_home = root.path().join("config");
+        let paths = AppPaths::from_values(
+            root.path(),
+            Some(&data_home),
+            Some(&cache_home),
+            Some(&config_home),
+        )
+        .expect("paths");
+        let store = MemorySecretStore::default();
+        let session = SessionState::new(paths, store.clone());
+        block_on(store.set(
+            &SecretKey::apple("synthetic-account").expect("apple key"),
+            SecretValue::from_bytes(b"credential".to_vec()),
+        ))
+        .expect("credential");
+        block_on(store.set(
+            &SecretKey::apple_hardware("synthetic-account").expect("hardware key"),
+            SecretValue::from_bytes(b"hardware".to_vec()),
+        ))
+        .expect("hardware");
+
+        let report = block_on(session.sign_out_account("synthetic-account")).expect("sign out");
+        assert!(report.secret_deleted);
+        assert!(
+            block_on(store.get(&SecretKey::apple("synthetic-account").expect("key")))
+                .expect("credential lookup")
+                .is_none()
+        );
+        assert!(
+            block_on(store.get(&SecretKey::apple_hardware("synthetic-account").expect("key")))
+                .expect("hardware lookup")
                 .is_none()
         );
     }

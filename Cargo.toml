@@ -19,6 +19,7 @@ license-file = "LICENSE"
 rust-version = "1.85"
 
 [workspace.dependencies]
+async-trait = "0.1"
 anyhow = "1"
 base64 = "0.22"
 prost = "0.13"
