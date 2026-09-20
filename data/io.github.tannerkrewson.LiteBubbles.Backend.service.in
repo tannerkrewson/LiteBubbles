@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=io.github.tannerkrewson.LiteBubbles.Backend
+Exec=@LITEBUBBLES_DAEMON_EXEC@
+SystemdService=litebubblesd.service

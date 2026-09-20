@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=LiteBubbles
+Comment=Native GNOME client for Apple messaging and services
+Exec=@LITEBUBBLES_EXEC@
+Icon=io.github.tannerkrewson.LiteBubbles
+Terminal=false
+Type=Application
+StartupNotify=true
+DBusActivatable=true
+Categories=Network;InstantMessaging;
+Keywords=Messages;Chat;iMessage;
