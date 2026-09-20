@@ -1,3 +1,10 @@
 Third-party dependency notices will be recorded here as dependencies are pinned
 and audited. LiteBubbles does not copy source code, resources, icons, CSS, or UI
 templates from the Fractal reference project.
+
+The audited OpenBubbles/rustpush revision is SSPL-1.0 licensed. Its
+LICENSE.exceptions file names OpenBubbles for its special exception; it does not
+name LiteBubbles. Distribution and the final rustpush source boundary require
+separate legal review. The revision and its nested dependencies remain blocked
+from the build until the missing FairPlay source decision documented in
+docs/lb-008-blocker.md is resolved.

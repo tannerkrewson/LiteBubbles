@@ -26,6 +26,7 @@ podman exec "$toolbox_name" sudo dnf install -y \
     gtk4-devel libadwaita-devel glib2-devel openssl-devel \
     sqlite-devel protobuf-compiler dbus-devel libsecret-devel \
     gstreamer1-devel gstreamer1-plugins-base-devel pipewire-devel \
-    git gh rust cargo rustfmt clippy buildah make
+    git gh rust cargo rustfmt clippy buildah make \
+    perl-FindBin perl-IPC-Cmd perl-Time-Piece
 
 printf 'Toolbx %s is ready. Enter it with: toolbox enter %s\n' "$toolbox_name" "$toolbox_name"
