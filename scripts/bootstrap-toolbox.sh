@@ -9,7 +9,7 @@ if ! command -v toolbox >/dev/null 2>&1; then
 fi
 
 if ! toolbox list --containers | awk '{print $1}' | grep -qx "$toolbox_name"; then
-    toolbox create --release 44 "$toolbox_name"
+    toolbox --assumeyes create --release 44 "$toolbox_name"
 fi
 
 toolbox run --container "$toolbox_name" bash -lc '
