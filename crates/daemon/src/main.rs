@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use litebubbles_storage::AppPaths;
 use litebubblesd::run_daemon;
 
 fn print_help() {
@@ -10,7 +11,9 @@ fn print_help() {
     println!("Options:");
     println!("    --help       Print this help message");
     println!();
-    println!("DATABASE defaults to litebubbles.sqlite3 and is owned by the daemon.");
+    println!(
+        "DATABASE defaults to $XDG_DATA_HOME/litebubbles/litebubbles.sqlite3 (or $HOME/.local/share/litebubbles/litebubbles.sqlite3) and is owned by the daemon."
+    );
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,6 +40,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let database = database.unwrap_or_else(|| PathBuf::from("litebubbles.sqlite3"));
+    let database = match database {
+        Some(path) => path,
+        None => AppPaths::from_environment()?.database_path(),
+    };
     futures_lite::future::block_on(run_daemon(database))
 }
