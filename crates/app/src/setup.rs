@@ -895,6 +895,7 @@ impl SetupView {
             .icon_name("go-previous-symbolic")
             .tooltip_text("Back to conversations")
             .build();
+        leave_button.update_property(&[gtk::accessible::Property::Label("Back to conversations")]);
         header.pack_start(&leave_button);
         let title = adw::WindowTitle::new("Set up LiteBubbles", "");
         header.set_title_widget(Some(&title));
@@ -911,6 +912,7 @@ impl SetupView {
             .css_classes(["suggested-action"])
             .halign(gtk::Align::Center)
             .build();
+        begin.update_property(&[gtk::accessible::Property::Label("Begin setup")]);
         let first_run = adw::StatusPage::builder()
             .icon_name("preferences-system-symbolic")
             .title("Set up LiteBubbles")
@@ -964,6 +966,7 @@ impl SetupView {
             .css_classes(["suggested-action"])
             .halign(gtk::Align::Center)
             .build();
+        complete_button.update_property(&[gtk::accessible::Property::Label("Open conversations")]);
         complete.append(&complete_button);
         stack.add_named(&complete, Some(SetupStage::Complete.page_name()));
 
@@ -978,10 +981,14 @@ impl SetupView {
             .halign(gtk::Align::Center)
             .build();
         let error_back = gtk::Button::with_label("Back");
+        error_back.update_property(&[gtk::accessible::Property::Label(
+            "Back to previous setup step",
+        )]);
         let error_retry = gtk::Button::builder()
             .label("Try again")
             .css_classes(["suggested-action"])
             .build();
+        error_retry.update_property(&[gtk::accessible::Property::Label("Try setup step again")]);
         error_actions.append(&error_back);
         error_actions.append(&error_retry);
         error_page.set_child(Some(&error_actions));
@@ -994,6 +1001,13 @@ impl SetupView {
             controller_for_begin.dispatch(SetupEvent::Begin);
         });
 
+        let activation_submit_for_device = activation_submit.clone();
+        device_entry.connect_activate(move |_| activation_submit_for_device.emit_clicked());
+        let activation_submit_for_activation = activation_submit.clone();
+        activation_entry.connect_activate(move |_| activation_submit_for_activation.emit_clicked());
+        let activation_submit_for_provisioning = activation_submit.clone();
+        provisioning_entry
+            .connect_activate(move |_| activation_submit_for_provisioning.emit_clicked());
         let controller_for_activation = controller.clone();
         activation_submit.connect_clicked(move |_| {
             controller_for_activation.dispatch(SetupEvent::SubmitActivation(ActivationInput::new(
@@ -1003,6 +1017,10 @@ impl SetupView {
             )));
         });
 
+        let login_submit_for_account = login_submit.clone();
+        account_entry.connect_activate(move |_| login_submit_for_account.emit_clicked());
+        let login_submit_for_password = login_submit.clone();
+        password_entry.connect_activate(move |_| login_submit_for_password.emit_clicked());
         let controller_for_login = controller.clone();
         login_submit.connect_clicked(move |_| {
             controller_for_login.dispatch(SetupEvent::SubmitAppleLogin(AppleLoginInput::new(
@@ -1011,6 +1029,8 @@ impl SetupView {
             )));
         });
 
+        let two_factor_submit_for_code = two_factor_submit.clone();
+        two_factor_entry.connect_activate(move |_| two_factor_submit_for_code.emit_clicked());
         let controller_for_two_factor = controller.clone();
         two_factor_submit.connect_clicked(move |_| {
             controller_for_two_factor.dispatch(SetupEvent::SubmitTwoFactor(TwoFactorInput::new(
@@ -1147,6 +1167,9 @@ fn form_page(title: &str, description: &str, fields: &gtk::Box, submit: &gtk::Bu
 }
 
 fn action_row(title: &str, widget: &impl IsA<gtk::Widget>) -> adw::ActionRow {
+    widget
+        .as_ref()
+        .update_property(&[gtk::accessible::Property::Label(title)]);
     let row = adw::ActionRow::builder().title(title).build();
     row.add_suffix(widget);
     row
@@ -1271,6 +1294,7 @@ fn identity_selection_page() -> (gtk::Box, gtk::ListBox) {
         .css_classes(["boxed-list"])
         .vexpand(true)
         .build();
+    list.update_property(&[gtk::accessible::Property::Label("Available identities")]);
     page.append(&heading);
     page.append(&list);
     (page, list)

@@ -134,6 +134,10 @@ pub fn build_composer() -> ComposerView {
         .bottom_margin(6)
         .hexpand(true)
         .build();
+    input.update_property(&[
+        gtk::accessible::Property::Label("Message"),
+        gtk::accessible::Property::Description("Write a message to the selected conversation"),
+    ]);
     input.set_height_request(38);
     input.set_vexpand(false);
 
@@ -143,6 +147,7 @@ pub fn build_composer() -> ComposerView {
         .valign(gtk::Align::End)
         .sensitive(false)
         .build();
+    send_button.update_property(&[gtk::accessible::Property::Label("Send message")]);
     send_button.add_css_class("suggested-action");
 
     let input_scroll = gtk::ScrolledWindow::builder()

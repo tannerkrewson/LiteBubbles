@@ -605,12 +605,14 @@ fn conversation_sidebar(
         .tooltip_text("New conversation (Ctrl+N)")
         .action_name("app.new-conversation")
         .build();
+    new_button.update_property(&[gtk::accessible::Property::Label("New conversation")]);
     header.pack_end(&new_button);
     let menu = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .tooltip_text("Application menu")
         .menu_model(&application_menu())
         .build();
+    menu.update_property(&[gtk::accessible::Property::Label("Application menu")]);
     header.pack_end(&menu);
 
     let search = gtk::SearchEntry::builder()
@@ -619,6 +621,7 @@ fn conversation_sidebar(
         .hexpand(true)
         .build();
     search.set_accessible_role(gtk::AccessibleRole::SearchBox);
+    search.update_property(&[gtk::accessible::Property::Label("Search conversations")]);
     let search_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     search_box.set_margin_start(12);
     search_box.set_margin_end(12);
@@ -676,6 +679,7 @@ fn conversation_sidebar(
     list.set_show_separators(false);
     list.add_css_class("navigation-sidebar");
     list.set_accessible_role(gtk::AccessibleRole::ListBox);
+    list.update_property(&[gtk::accessible::Property::Label("Conversations")]);
 
     let model_for_search = Rc::clone(model);
     let query_for_search = Rc::clone(&query);
@@ -927,6 +931,7 @@ fn content_toolbar(content_stack: &gtk::Stack, model: &Rc<RefCell<UiModel>>) -> 
         .tooltip_text("Show conversations")
         .action_name("win.show-sidebar")
         .build();
+    back.update_property(&[gtk::accessible::Property::Label("Show conversations")]);
     header.pack_start(&back);
     let selected_title = model
         .borrow()
@@ -940,12 +945,14 @@ fn content_toolbar(content_stack: &gtk::Stack, model: &Rc<RefCell<UiModel>>) -> 
         .tooltip_text("Start an audio call")
         .sensitive(false)
         .build();
+    call.update_property(&[gtk::accessible::Property::Label("Start an audio call")]);
     header.pack_end(&call);
     let info = gtk::Button::builder()
         .icon_name("info-outline-symbolic")
         .tooltip_text("Conversation details")
         .sensitive(false)
         .build();
+    info.update_property(&[gtk::accessible::Property::Label("Conversation details")]);
     header.pack_end(&info);
 
     let toolbar = adw::ToolbarView::new();

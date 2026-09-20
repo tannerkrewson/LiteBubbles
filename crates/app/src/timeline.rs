@@ -468,6 +468,8 @@ impl TimelineView {
         list.set_show_separators(false);
         list.set_vexpand(true);
         list.set_hexpand(true);
+        list.set_accessible_role(gtk::AccessibleRole::ListBox);
+        list.update_property(&[gtk::accessible::Property::Label("Messages")]);
 
         let scrolled_window = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
