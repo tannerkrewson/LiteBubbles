@@ -303,16 +303,14 @@ impl Conversation {
             self.participants.iter().map(|participant| &participant.id),
             "participant",
         )?;
-        if let ConversationKind::Group(details) = &self.kind {
-            if let Some(owner) = &details.owner {
-                if !self
-                    .participants
-                    .iter()
-                    .any(|participant| &participant.id == owner)
-                {
-                    return Err(DomainError::InvalidRelationship("group owner"));
-                }
-            }
+        if let ConversationKind::Group(details) = &self.kind
+            && let Some(owner) = &details.owner
+            && !self
+                .participants
+                .iter()
+                .any(|participant| &participant.id == owner)
+        {
+            return Err(DomainError::InvalidRelationship("group owner"));
         }
         Ok(())
     }

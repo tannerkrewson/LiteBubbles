@@ -64,10 +64,10 @@ impl FixtureSet {
             let Some(conversation) = self.conversation(&message.conversation_id) else {
                 return Err(DomainError::MissingRelationship("message conversation"));
             };
-            if let Some(sender) = &message.sender {
-                if conversation.participant(sender).is_none() {
-                    return Err(DomainError::InvalidRelationship("message sender"));
-                }
+            if let Some(sender) = &message.sender
+                && conversation.participant(sender).is_none()
+            {
+                return Err(DomainError::InvalidRelationship("message sender"));
             }
             if let Some(reply_to) = &message.reply_to {
                 let Some(parent) = self.message(reply_to) else {
