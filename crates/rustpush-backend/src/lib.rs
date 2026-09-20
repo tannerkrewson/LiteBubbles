@@ -3,6 +3,10 @@
 //! This crate is intentionally the only workspace crate that will depend on
 //! rustpush once the upstream revision has been audited and pinned.
 
+pub mod hardware;
+
+pub use hardware::{HardwareInputError, MacHardwareConfig, MacHardwareInput, MacSoftwareInfo};
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
