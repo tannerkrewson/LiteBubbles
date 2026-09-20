@@ -5,8 +5,15 @@ edition.workspace = true
 license-file.workspace = true
 rust-version.workspace = true
 
+[features]
+# This feature only proves that rustpush's compile-time FairPlay dependency is
+# gone. The corresponding rustpush path returns an explicit error if invoked.
+# It must never be enabled as a production activation mechanism.
+development-dummy-fairplay = ["rustpush/dummy-fairplay"]
+
 [dependencies]
 base64.workspace = true
 litebubbles-core = { path = "../core" }
 prost.workspace = true
+rustpush = { package = "rustpush", path = "../../vendor/rustpush", default-features = false, features = ["remote-anisette-v3"] }
 thiserror.workspace = true

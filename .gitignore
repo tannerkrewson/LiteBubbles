@@ -9,3 +9,8 @@ openbubbles.so
 Mac.Hardware.Info.zip
 *.swp
 *.swo
+
+# The pinned rustpush checkout is patched in place only for a build. Never
+# allow local FairPlay or compatibility material to enter the superproject.
+/vendor/rustpush/certs/fairplay/
+/compat/
