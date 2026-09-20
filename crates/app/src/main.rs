@@ -1,9 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use adw::prelude::*;
 use gtk::{gio, glib};
+use litebubbles::{TimelineModel, TimelineView, build_composer, build_timeline};
 use litebubbles_core::{
-    Conversation, ConversationId, ConversationKind, Message, MessagePart, PersonId, ReadState,
+    BackendEvent, BackendEventId, BackendEventKind, Conversation, ConversationId, ConversationKind,
+    DeliveryState, Message, MessageId, MessagePart, ParticipantId, PersonId, ReadState, TextPart,
     Timestamp,
 };
 use litebubbles_mock_backend::{FixtureSet, MockBackend};
@@ -218,6 +220,7 @@ struct UiModel {
 }
 
 impl UiModel {
+    #[cfg(test)]
     fn fixture() -> Self {
         let backend = MockBackend::new();
         Self::from_fixture(backend.fixture())
@@ -260,6 +263,145 @@ impl UiModel {
     }
 }
 
+#[derive(Debug, Default, Eq, PartialEq)]
+struct MockSendState {
+    next_sequence: u64,
+}
+
+impl MockSendState {
+    fn events_for(
+        &mut self,
+        conversation_id: &ConversationId,
+        sender: &ParticipantId,
+        text: &str,
+    ) -> (BackendEvent, BackendEvent) {
+        self.next_sequence += 1;
+        let sequence = self.next_sequence;
+        let message_id = shell_id::<MessageId>(format!("shell-message-{sequence:03}"));
+        let occurred_at = Timestamp::from_millis(1_700_000_020_000 + sequence as i64 * 1_000);
+        let pending = Message {
+            id: message_id.clone(),
+            conversation_id: conversation_id.clone(),
+            sender: Some(sender.clone()),
+            sent_at: occurred_at,
+            parts: vec![MessagePart::Text(TextPart {
+                text: text.to_owned(),
+                formatting: Vec::new(),
+            })],
+            mutations: Vec::new(),
+            reactions: Vec::new(),
+            delivery: DeliveryState::Queued,
+            delivery_receipts: Vec::new(),
+            read_state: ReadState::Read { at: occurred_at },
+            read_receipts: Vec::new(),
+            reply_to: None,
+            extensions: Vec::new(),
+        };
+        let mut sent = pending.clone();
+        sent.delivery = DeliveryState::Sent;
+        (
+            shell_event(
+                format!("shell-event-{sequence:03}-pending"),
+                occurred_at,
+                BackendEventKind::MessageAdded(pending),
+            ),
+            shell_event(
+                format!("shell-event-{sequence:03}-sent"),
+                Timestamp::from_millis(occurred_at.as_millis() + 500),
+                BackendEventKind::MessageChanged(sent),
+            ),
+        )
+    }
+}
+
+fn shell_id<T>(value: String) -> T
+where
+    T: TryFrom<String>,
+    T::Error: std::fmt::Debug,
+{
+    T::try_from(value).expect("deterministic shell identifiers are valid")
+}
+
+fn shell_event(id: String, occurred_at: Timestamp, kind: BackendEventKind) -> BackendEvent {
+    BackendEvent {
+        id: shell_id::<BackendEventId>(id),
+        occurred_at,
+        kind,
+        extensions: Vec::new(),
+    }
+}
+
+struct ConversationPage {
+    root: gtk::Box,
+    timeline: Rc<TimelineView>,
+}
+
+fn conversation_page(
+    conversation: &ConversationItem,
+    fixture: &FixtureSet,
+    send_state: &Rc<RefCell<MockSendState>>,
+) -> ConversationPage {
+    let timeline_model = TimelineModel::from_fixture(fixture, &conversation.id, None)
+        .expect("sidebar conversations must have timeline fixtures");
+    let timeline = Rc::new(build_timeline(timeline_model));
+    timeline.root.set_vexpand(true);
+
+    // This callback is the deliberate backend seam: production D-Bus events
+    // will eventually call TimelineView::apply_event with the same domain event.
+    let composer = Rc::new(build_composer());
+    let timeline_for_send = Rc::clone(&timeline);
+    let composer_for_send = Rc::clone(&composer);
+    let conversation_id = conversation.id.clone();
+    let sender = timeline
+        .model()
+        .borrow()
+        .own_participant_id()
+        .cloned()
+        .expect("fixture conversation must identify the local participant");
+    let send_state = Rc::clone(send_state);
+    composer.connect_send(move |draft| {
+        let (pending, sent) =
+            send_state
+                .borrow_mut()
+                .events_for(&conversation_id, &sender, &draft.text);
+        composer_for_send.set_sending(true);
+        timeline_for_send.apply_event(&pending);
+
+        let timeline_for_sent = Rc::clone(&timeline_for_send);
+        let composer_for_sent = Rc::clone(&composer_for_send);
+        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+            timeline_for_sent.apply_event(&sent);
+            composer_for_sent.set_sending(false);
+        });
+    });
+
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    body.set_vexpand(true);
+    body.set_hexpand(true);
+    body.append(&timeline.root);
+    body.append(&composer.root);
+
+    ConversationPage {
+        root: body,
+        timeline,
+    }
+}
+
+fn install_mock_event_feed(
+    backend: Rc<RefCell<MockBackend>>,
+    timelines: Rc<RefCell<Vec<Rc<TimelineView>>>>,
+) {
+    glib::timeout_add_local(Duration::from_millis(250), move || {
+        let Some(event) = backend.borrow_mut().next_event() else {
+            return glib::ControlFlow::Break;
+        };
+        for timeline in timelines.borrow().iter() {
+            timeline.apply_event(&event);
+        }
+        glib::ControlFlow::Continue
+    });
+}
+
 fn main() -> glib::ExitCode {
     adw::init().expect("libadwaita must initialize");
 
@@ -272,7 +414,11 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_window(application: &adw::Application) {
-    let model = Rc::new(RefCell::new(UiModel::fixture()));
+    let backend = Rc::new(RefCell::new(MockBackend::new()));
+    let fixture = backend.borrow().fixture().clone();
+    let model = Rc::new(RefCell::new(UiModel::from_fixture(&fixture)));
+    let send_state = Rc::new(RefCell::new(MockSendState::default()));
+    let timelines = Rc::new(RefCell::new(Vec::new()));
     let window = adw::ApplicationWindow::builder()
         .application(application)
         .title("LiteBubbles")
@@ -287,9 +433,10 @@ fn build_window(application: &adw::Application) {
         .build();
     append_state_pages(&content_stack);
     for conversation in &model.borrow().conversations {
-        let page = conversation_page(conversation, &content_stack);
+        let page = conversation_page(conversation, &fixture, &send_state);
+        timelines.borrow_mut().push(Rc::clone(&page.timeline));
         content_stack.add_titled(
-            &page,
+            &page.root,
             Some(&conversation_page_name(&conversation.id)),
             conversation.title(),
         );
@@ -322,6 +469,7 @@ fn build_window(application: &adw::Application) {
 
     install_window_actions(&window, &model, &split_view, &content_stack, &search_entry);
     install_application_actions(application, &window, &model, &split_view, &content_stack);
+    install_mock_event_feed(backend, timelines);
     window.present();
 }
 
@@ -719,81 +867,6 @@ fn content_toolbar(content_stack: &gtk::Stack, model: &Rc<RefCell<UiModel>>) -> 
     toolbar
 }
 
-fn conversation_page(conversation: &ConversationItem, _stack: &gtk::Stack) -> gtk::ScrolledWindow {
-    let messages = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    messages.set_margin_start(24);
-    messages.set_margin_end(24);
-    messages.set_margin_top(24);
-    messages.set_margin_bottom(12);
-    messages.set_valign(gtk::Align::End);
-
-    let incoming = message_bubble(conversation.title(), conversation.snippet(), false);
-    messages.append(&incoming);
-    let reply = message_bubble(
-        "You",
-        "Thanks for the update — I’ll take a look this afternoon.",
-        true,
-    );
-    messages.append(&reply);
-
-    let composer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    composer.set_margin_start(16);
-    composer.set_margin_end(16);
-    composer.set_margin_top(8);
-    composer.set_margin_bottom(16);
-    let entry = gtk::Entry::builder()
-        .placeholder_text("Write a message")
-        .hexpand(true)
-        .build();
-    let send = gtk::Button::builder()
-        .icon_name("mail-send-symbolic")
-        .tooltip_text("Send message")
-        .sensitive(false)
-        .build();
-    composer.append(&entry);
-    composer.append(&send);
-
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    body.set_vexpand(true);
-    body.append(&messages);
-    body.append(&composer);
-    gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .vexpand(true)
-        .child(&body)
-        .build()
-}
-
-fn message_bubble(sender: &str, text: &str, outgoing: bool) -> gtk::Frame {
-    let frame = gtk::Frame::new(None);
-    frame.set_halign(if outgoing {
-        gtk::Align::End
-    } else {
-        gtk::Align::Start
-    });
-    frame.add_css_class(if outgoing { "accent-bg" } else { "card" });
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    body.set_margin_start(14);
-    body.set_margin_end(14);
-    body.set_margin_top(10);
-    body.set_margin_bottom(10);
-    let sender_label = gtk::Label::builder()
-        .label(sender)
-        .halign(gtk::Align::Start)
-        .build();
-    sender_label.add_css_class("caption-heading");
-    let text_label = gtk::Label::builder()
-        .label(text)
-        .wrap(true)
-        .selectable(true)
-        .halign(gtk::Align::Start)
-        .build();
-    body.append(&sender_label);
-    body.append(&text_label);
-    frame.set_child(Some(&body));
-    frame
-}
-
 fn application_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     menu.append(Some("New conversation"), Some("app.new-conversation"));
@@ -905,6 +978,7 @@ fn install_application_actions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litebubbles::{TimelineEventEffect, TimelineRow};
 
     #[test]
     fn fixture_rows_are_valid_core_relationships() {
@@ -967,6 +1041,68 @@ mod tests {
         assert_eq!(
             model.conversations[1].snippet(),
             "This message demonstrates a failed delivery."
+        );
+    }
+
+    #[test]
+    fn conversation_pages_start_from_domain_fixture_messages() {
+        let backend = MockBackend::new();
+        let fixture = backend.fixture();
+        let conversation = &fixture.conversations[0];
+        let timeline = TimelineModel::from_fixture(fixture, &conversation.id, None)
+            .expect("fixture conversation has a timeline");
+
+        assert_eq!(timeline.messages().len(), 2);
+        assert!(timeline.rows().iter().any(|row| {
+            matches!(
+                row,
+                TimelineRow::Message(message)
+                    if message.parts.iter().any(|part| matches!(
+                        part,
+                        litebubbles::RenderedPart::Text { text, .. }
+                            if text == "I took a look—here is the latest."
+                    ))
+            )
+        }));
+    }
+
+    #[test]
+    fn composer_shell_emits_deterministic_pending_then_sent_events() {
+        let backend = MockBackend::new();
+        let fixture = backend.fixture();
+        let conversation = &fixture.conversations[0];
+        let mut timeline = TimelineModel::from_fixture(fixture, &conversation.id, None)
+            .expect("fixture conversation has a timeline");
+        let sender = timeline
+            .own_participant_id()
+            .cloned()
+            .expect("fixture conversation has a local participant");
+        let mut send_state = MockSendState::default();
+        let (pending, sent) = send_state.events_for(&conversation.id, &sender, "shell test");
+
+        assert_eq!(send_state.next_sequence, 1);
+        assert!(matches!(
+            timeline.apply_event(&pending),
+            TimelineEventEffect::Appended { .. }
+        ));
+        assert_eq!(
+            timeline.messages().last().unwrap().delivery,
+            DeliveryState::Queued
+        );
+        assert!(matches!(
+            timeline.apply_event(&sent),
+            TimelineEventEffect::Updated { .. }
+        ));
+        assert_eq!(
+            timeline.messages().last().unwrap().delivery,
+            DeliveryState::Sent
+        );
+        assert_eq!(
+            timeline.messages().last().unwrap().parts[0],
+            MessagePart::Text(TextPart {
+                text: "shell test".to_owned(),
+                formatting: Vec::new(),
+            })
         );
     }
 }

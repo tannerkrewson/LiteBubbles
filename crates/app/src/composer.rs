@@ -161,6 +161,8 @@ pub fn build_composer() -> ComposerView {
     layout.append(&send_button);
 
     let responsive = adw::BreakpointBin::builder().child(&layout).build();
+    responsive.set_width_request(1);
+    responsive.set_height_request(38);
     let narrow = adw::Breakpoint::new(
         adw::BreakpointCondition::parse("max-width: 520sp")
             .expect("composer breakpoint condition is valid"),

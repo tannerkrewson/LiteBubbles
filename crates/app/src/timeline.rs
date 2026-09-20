@@ -5,8 +5,9 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use adw::prelude::*;
 use gtk::{gio, glib};
 use litebubbles_core::{
-    AttachmentKind, BackendEvent, BackendEventKind, Conversation, ConversationId, Location,
-    Message, MessageId, MessageMutationKind, MessagePart, ParticipantId, TextFormatting, Timestamp,
+    AttachmentKind, BackendEvent, BackendEventKind, Conversation, ConversationId, DeliveryState,
+    Location, Message, MessageId, MessageMutationKind, MessagePart, ParticipantId, TextFormatting,
+    Timestamp,
 };
 use litebubbles_mock_backend::{FixtureSet, MockBackend};
 
@@ -833,9 +834,26 @@ fn append_message(
     timestamp.add_css_class("caption");
     body.append(&timestamp);
 
+    let delivery = gtk::Label::builder()
+        .label(delivery_label(&message.message.delivery))
+        .halign(gtk::Align::End)
+        .build();
+    delivery.add_css_class("dim-label");
+    delivery.add_css_class("caption");
+    body.append(&delivery);
+
     bubble.set_child(Some(&body));
     line.append(&bubble);
     container.append(&line);
+}
+
+fn delivery_label(delivery: &DeliveryState) -> &'static str {
+    match delivery {
+        DeliveryState::Queued => "Pending",
+        DeliveryState::Sent => "Sent",
+        DeliveryState::Delivered => "Delivered",
+        DeliveryState::Failed { .. } => "Failed",
+    }
 }
 
 fn default_part_renderer(part: &RenderedPart) -> gtk::Widget {
