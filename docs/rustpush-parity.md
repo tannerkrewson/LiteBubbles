@@ -1,6 +1,64 @@
 # rustpush capability parity
 
-The pinned rustpush revision and its current OpenBubbles integration are audited
-before capability claims are made. Each discovered capability will record its
-upstream source, OpenBubbles usage, LiteBubbles issue, implementation status,
-test status, and known limitations.
+This is an audit matrix, not a support claim. It compares the pinned
+`OpenBubbles/rustpush` revision with the current OpenBubbles application
+integration and LiteBubbles' planned work. A row marked “not implemented” means
+LiteBubbles has not exposed or tested that capability yet.
+
+## Audit inputs
+
+- rustpush: `f35c4ee062b3c3eae54dc96b89b90ee99f5e1d0c`, checked out at
+  `/var/home/tannerkrewson/Projects/litebubbles-reference/rustpush`.
+- OpenBubbles application: `eed1b6332efbb17adbf5ebfa2263ad770169f75e`, checked
+  out at `/var/home/tannerkrewson/Projects/litebubbles-reference/openbubbles-app`.
+- The complete checkout and license facts are in
+  [references.md](references.md).
+
+The OpenBubbles column names source functions and types, not a dependency or a
+copying plan. LiteBubbles' implementation status is deliberately conservative:
+the current `rustpush-backend` crate is only an adapter boundary skeleton.
+
+## Matrix
+
+| Capability and exact pinned rustpush API | OpenBubbles source usage | LiteBubbles issue | Implementation status | Test status | Limitations and audit notes |
+| --- | --- | --- | --- | --- | --- |
+| Configuration and activation: `OSConfig`, `ActivationInfo`, `activate`, `RelayConfig` | `rust/src/api/api.rs`: `JoinedOSConfig`, `config_from_macos`, `config_from_relay`, `get_device_info`, `get_entitlements` | LB-014 (#13), LB-008 (#8) | Not implemented; no support claim | No LiteBubbles activation tests | Requires exact device/config and validation behavior; relay and local activation are distinct modes. |
+| Apple account login and delegates: `AppleAccount`, `LoginDelegate`, `login_apple_delegates`, `request_update_account`, `authenticate_apple`, `TokenProvider` | `rust/src/api/api.rs`: `try_auth`, `do_login`, `try_icloud_login`, `update_account_headers`, `get_quota_info` | LB-015 (#14), LB-041 (#40) | Not implemented; no support claim | No LiteBubbles auth fixtures | Anisette, account state, terms, tokens, and redacted error handling are required. |
+| Two-factor and trusted-peer flows: `CircleClientSession`, `CircleServerSession`, `IdmsAuthListener`, `verify_2fa`, `send_code`, `setup_trusted_peers` | `rust/src/api/api.rs`: `send_2fa_to_devices`, `verify_2fa`, `send_2fa_sms`, `verify_2fa_sms`, `approve_circle`, `circle_setup_clique` | LB-015 (#14), LB-012 (#12) | Not implemented; no support claim | No LiteBubbles 2FA or clique tests | Trusted-device and iCloud Keychain recovery require sensitive local state and manual real-account testing. |
+| APS transport and topics: `APSConnection`, `APSState`, `APSMessage`, `APSConnection::new`, `request_topics`, `subscribe`, `wait_for`, `send`, `subscribe_channels` | `rust/src/api/api.rs`: `SharedPushState`, `recv_wait`, `get_token`, `close_aps` | LB-016 (#15) | Not implemented; no support claim | No fake-transport tests | The daemon must own reconnect, cancellation, token refresh, and bounded backoff. |
+| IDS identities and registration: `IDSUser`, `IDSUserIdentity`, `IDSNGMIdentity`, `register`, `IdentityManager`, `IDSUser::get_possible_handles`, `IdentityManager::send_message` | `rust/src/api/api.rs`: `new_ngm_identity`, `decode_identity`, `make_imclient`, `get_handles`, `get_my_phone_handles`, `do_reregister` | LB-015 (#14), LB-016 (#15) | Not implemented; no support claim | No identity/registration fixtures | Identity private keys and caches require secure persistence; available handles depend on account/device state. |
+| iMessage receive/send: `IMClient`, `IMClient::handle`, `IMClient::send`, `Message`, `MessageInst`, `MessageParts` | `rust/src/api/api.rs`: `send`, `recv_wait`, `new_msg`, `validate_targets`; `lib/services/rustpush/rustpush_service.dart` maps `MessageInst` into local models | LB-017 (#16), LB-023 (#22) | Not implemented; no support claim | No LiteBubbles message fixtures | Incoming data must be durable before UI events; real service behavior is separately gated. |
+| Message variants and mutations: `MessagePart`, `TextFormat`, `TextEffect`, `ReactMessage`, `EditMessage`, `UnsendMessage`, `DeleteTarget`, `MoveToRecycleBinMessage`, `PermanentDeleteMessage`, `ScheduleMode`, `TypingApp`, `Balloon`, `PartExtension` | `rust/src/api/api.rs` exposes the mirrored types and `rustpush_service.dart` translates text effects, mentions, attachments, balloons, reactions, edits, unsends, and scheduling | LB-027 (#26), LB-028 (#27), LB-029 (#28), LB-030 (#29), LB-031 (#30), LB-034 (#33), LB-035 (#34) | Not implemented; no support claim | No per-variant fixtures | Every pinned variant must be supported or remain explicit and understandable; unknown/malformed parts must not crash the daemon. |
+| iMessage attachments and MMCS: `Attachment`, `MMCSFile`, `Attachment::new_mmcs`, `Attachment::get_attachment`, `AttachmentPreparedPut`, `prepare_put` | `rust/src/api/api.rs`: `upload_attachment`, `download_attachment`, `upload_mmcs`, `download_mmcs`; Dart stores rustpush attachment metadata and streams files | LB-026 (#25) | Not implemented; no support claim | No transfer/progress tests | Large files must use controlled paths/streams, not giant D-Bus byte arrays; previews and cleanup need their own policy. |
+| Cloud message history and attachment records: `CloudMessagesClient`, `sync_chats`, `sync_messages`, `sync_attachments`, `save_*`, `delete_*`, `count_records` | `rust/src/api/api.rs`: `make_cloud_messages_client`, `sync_chats`, `sync_messages`, `sync_attachments`, `upload_cloud_attachments`, `download_cloud_attachments` | LB-018 (#17), LB-040 (#39) | Not implemented; no support claim | No continuation-token or replay tests | CloudKit history is distinct from live APS events; deduplication, ordering, and reset behavior must be verified. |
+| Profiles and name/photo sharing: `ProfilesClient`, `IMessageNicknameRecord`, `IMessagePosterRecord`, `ShareProfileMessage`, `posterkit` types | `rust/src/api/api.rs`: `make_profiles`, `fetch_profile`, `set_profile`, poster parse/pack helpers | LB-033 (#32) | Not implemented; no support claim | No profile/avatar fixtures | Missing or malformed profile data must never block message rendering; resource/license boundaries remain separate. |
+| Relay/SMS identity behavior: `RelayConfig`, `get_gateways_for_mccmnc`, `IdentityManager::get_sms_targets`, `IdentityManager::get_my_phone_handles` | `rust/src/api/api.rs`: `config_from_relay`, `validate_relay`, `auth_phone`; Android `SMSAuthGateway`, `SMSLessAuthGateway`, and `EAPAKAGateway` provide carrier paths | LB-037 (#36) | Not implemented; no support claim | No relay capability or identity-routing tests | Phone/SMS support is configuration- and carrier-dependent; no universal SMS claim is justified. |
+| FaceTime signaling and links: `FTClient`, `FTSession`, `FTClient::create_session`, `join`, `ring`, `respond_letmein`, `get_link_for_usage` | `rust/src/api/api.rs`: `make_facetime`, `create_facetime`, `answer_ft_request`, `decline_facetime`, `get_ft_link`, `ft_sessions` | LB-038 (#37) | Not implemented; no support claim | No signaling state-machine tests | `avconference.rs` also contains audio/video transport and codec primitives, but source presence is not proof of a complete GTK/PipeWire media feature. |
+| FaceTime media primitives: `AVConference`, `create_audio_sender`, `create_video_sender`, `send_audio_frame`, `send_video_frame`, SFrame helpers | OpenBubbles constructs call state through `FTClient`; platform media and call UI remain in the app/native layers | LB-038 (#37) | Not implemented; no support claim | No media tests | Treat signaling and media as separate acceptance surfaces; do not claim full media parity until local gated tests pass. |
+| Find My items: `FindMyClient`, `FindMyClient::sync_items`, `accept_item_share`, `update_beacon_name`, `delete_shared_item` | `rust/src/api/api.rs`: `make_find_my_phone`, `refresh_devices`, `make_find_my_friends`, beacon share/name and background-following helpers | LB-039 (#38) | Not implemented; no support claim | No Find My fixtures | Location, device identifiers, and sharing state are sensitive and must not enter diagnostics or logs. |
+| Find My people/devices: `FindMyPhoneClient`, `FindMyFriendsClient`, `refresh`, `import`, `FoundDevice`, `Follow` | `rust/src/api/api.rs`: `get_devices`, `refresh_devices`, `get_following`, `refresh_following`, `select_friend` | LB-039 (#38) | Not implemented; no support claim | No expiry/unavailable-state tests | Refresh and expiry semantics need explicit daemon state; real service tests must remain local and gated. |
+| Shared Streams albums/assets: `SharedStreamClient`, `SharedAlbum`, `subscribe`, `unsubscribe`, `get_assets`, `create_asset`, `delete_asset`, `get_file` | `rust/src/api/api.rs`: `make_shared_streams`, `get_albums`, `subscribe`, `unsubscribe`, `add_album`, `remove_album`, `sync_now` | LB-040 (#39) | Not implemented; no support claim | No album/file-packager tests | File packaging and progress need a native GNOME boundary; no Fractal/Tether resources are reused. |
+| CloudKit and PCS: `CloudKitClient`, `CloudKitOpenContainer`, `CloudKitOp`, `QueryRecordOperation`, `FetchRecordChangesOperation`, `CloudKitShare`, `PCSPrivateKey`, `PCSZoneConfig` | `rust/src/api/api.rs`: `make_cloudkit`, `CloudKitClient`, CloudKit history and password services | LB-040 (#39), LB-008 (#8) | Not implemented; no support claim | No CloudKit operation fixtures | CloudKit encryption, zones, shares, and continuation tokens need a dedicated adapter; network calls require manual/local coverage. |
+| iCloud Keychain and escrow: `KeychainClient`, `KeychainClientState`, `sync_keychain`, `get_viable_bottles`, `join_clique_from_escrow`, `reset_clique`, `change_escrow_password` | `rust/src/api/api.rs`: `make_keychain`, `is_in_clique`, `get_bottles`, `join_clique_with_bottle`, `reset_clique`, `change_escrow_password` | LB-012 (#12), LB-040 (#39), LB-041 (#40) | Not implemented; no support claim | No keychain mock/recovery tests | This is credential-bearing state, not OpenBubbles-data migration; require explicit user consent and secure storage. |
+| StatusKit presence: `StatusKitClient`, `StatusKitStatus`, `StatusKitPersonalConfig`, `invite_to_channel`, `request_handles`, `share_status`, `set_status` | `rust/src/api/api.rs`: `make_statuskit`, `invite_to_channel`, `request_handles`, `set_status`, `reset_channel_keys` | LB-040 (#39) | Not implemented; no support claim | No channel/key-rotation tests | Channel key state, subscriptions, and status visibility need privacy-aware persistence and error mapping. |
+| iCloud Passwords/passkeys/Wi-Fi/TOTP/sharing: `PasswordManager`, `PasswordRawEntry`, `PasswordManagerMeta`, `Passkey`, `WifiPassword`, `PasswordManagerTotp::generate_otp`, `sync_passwords`, `get_password_entries`, `insert_password_entry`, `delete_password_entry`, `create_group`, `invite_user`, `accept_invite` | `rust/src/api/api.rs`: `make_passwords`, `sync_passwords`, `get_passwords`, `get_passwords_meta`, `get_passkeys`, `get_wifi_passwords`, all save/delete/group/invite wrappers; `lib/app/layouts/settings/pages/passwords/` provides the UI | LB-047 (#46) | Not implemented; no support claim | No credential-entry, TOTP, sharing, or redaction tests | Newly tracked gap. Passwords, passkeys, Wi-Fi secrets, and TOTP material need a dedicated secure IPC/UI boundary; Apple autofill/provider behavior is not implied by these APIs. |
+| Secure key/codec support: `keystore::{Keystore, RsaKey, EcKeystoreKey, AesKeystoreKey}`, `cloudkit_proto::{CloudKitRecord, CloudKitEncryptor}`, `KeyedArchive`, `CompactECKey` | `rust/src/keystore.rs` bridges Android callbacks and software/backup keystores; `rust/src/api/api.rs` owns state migration and serialization wrappers | LB-008 (#8), LB-012 (#12), LB-040 (#39) | Not implemented; no support claim | No LiteBubbles crypto/keystore contract tests | These are implementation dependencies, not user-facing support. The rustpush gitlinks and their licenses still require a separate reviewed pin. |
+
+## Explicit non-claims and implementation rules
+
+- The matrix does not authorize copying rustpush, OpenBubbles, Fractal, or
+  Tether code or assets. LiteBubbles must translate upstream values at the
+  `rustpush-backend` boundary and keep core, protocol, storage, daemon, and UI
+  independent of upstream types.
+- No OpenBubbles user-data path was inspected or imported. Any state path shown
+  in OpenBubbles source is an integration observation only, never a LiteBubbles
+  path or migration requirement.
+- A public rustpush type or an OpenBubbles wrapper is evidence that a capability
+  exists in source, not evidence that the Apple service is available on every
+  account, carrier, device, or platform.
+- Real-account, activation, Anisette, relay, iCloud Keychain, Find My, FaceTime,
+  and media tests must be local/manual or separately gated. Secrets and private
+  message/location content must not enter CI artifacts or diagnostics.
+- The pinned rustpush `LICENSE.exceptions` grants a special exception to
+  OpenBubbles only. LiteBubbles must not rely on that exception without legal
+  review.
