@@ -7,6 +7,7 @@
 pub mod composer;
 pub mod setup;
 pub mod timeline;
+pub mod transport;
 
 pub use composer::{
     ComposerModel, ComposerView, OutgoingMessageDraft, SendAffordance, build_composer,
@@ -15,3 +16,4 @@ pub use timeline::{
     DaySeparator, GroupPosition, LoadState, RenderedPart, ScrollState, TimelineEventEffect,
     TimelineMessage, TimelineModel, TimelineRow, TimelineView, TimestampLabels, build_timeline,
 };
+pub use transport::{AppTransport, DbusTransport, NegotiatedProtocol, TransportError};

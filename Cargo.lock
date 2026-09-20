@@ -793,10 +793,14 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 name = "litebubbles"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "futures-lite",
  "gtk4",
  "libadwaita",
  "litebubbles-core",
  "litebubbles-mock-backend",
+ "litebubbles-protocol",
+ "zbus",
 ]
 
 [[package]]
@@ -1395,6 +1399,7 @@ version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
+ "getrandom",
  "js-sys",
  "serde_core",
  "wasm-bindgen",

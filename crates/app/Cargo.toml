@@ -7,6 +7,13 @@ rust-version.workspace = true
 
 [dependencies]
 adw = { package = "libadwaita", version = "0.8", features = ["v1_5"] }
+async-trait = "0.1"
 gtk = { package = "gtk4", version = "0.10", features = ["v4_12"] }
 litebubbles-core = { path = "../core" }
 litebubbles-mock-backend = { path = "../mock-backend" }
+litebubbles-protocol = { path = "../protocol" }
+zbus = { version = "=5.12.0", features = ["option-as-array"] }
+
+[dev-dependencies]
+futures-lite = "2"
+zbus = { version = "=5.12.0", features = ["option-as-array", "p2p"] }
