@@ -28,6 +28,17 @@ cargo test --workspace
 The application can be started with `cargo run -p litebubbles`; the daemon
 prints its command-line help with `cargo run -p litebubblesd -- --help`.
 
+The shell uses the user-session D-Bus daemon transport by default and performs
+the handshake asynchronously. For development or UI tests that need the
+synthetic conversation fixture, opt in explicitly:
+
+```sh
+LITEBUBBLES_TRANSPORT=mock cargo run -p litebubbles
+```
+
+Only the exact value `mock` selects fixture mode; unset or other values keep
+the production D-Bus path. Fixture mode is synthetic and credential-free.
+
 The architecture and protocol boundaries are documented in `docs/`. Reference
 repositories are checked out outside this repository and are never vendored
 into it.

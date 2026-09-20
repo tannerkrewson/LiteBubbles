@@ -3,7 +3,8 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 use adw::prelude::*;
 use gtk::{gio, glib};
 use litebubbles::{
-    TimelineModel, TimelineView, build_composer, build_timeline,
+    DbusTransport, ShellTransportMode, ShellTransportStatus, TimelineModel, TimelineView,
+    build_composer, build_timeline,
     setup::{
         BackendUpdate, ConnectionState, IdentityOption, SetupController, SetupEffect, SetupEvent,
         SetupView,
@@ -25,6 +26,7 @@ enum ViewState {
     Loading,
     Empty,
     Ready,
+    Connected,
     Error,
 }
 
@@ -34,6 +36,7 @@ impl ViewState {
             Self::Loading => "loading",
             Self::Empty => "empty",
             Self::Ready => "ready",
+            Self::Connected => "connected",
             Self::Error => "error",
         }
     }
@@ -248,6 +251,14 @@ impl UiModel {
         }
     }
 
+    fn empty() -> Self {
+        Self {
+            state: ViewState::Loading,
+            selected: None,
+            conversations: Vec::new(),
+        }
+    }
+
     fn select(&mut self, id: &ConversationId) {
         if self
             .conversations
@@ -322,6 +333,27 @@ impl MockSendState {
     }
 }
 
+#[derive(Debug)]
+struct ShellTransportState {
+    mode: ShellTransportMode,
+    status: ShellTransportStatus,
+    daemon: Option<DbusTransport>,
+}
+
+impl ShellTransportState {
+    fn new(mode: ShellTransportMode) -> Self {
+        Self {
+            mode,
+            status: if mode.uses_fixture() {
+                ShellTransportStatus::Connected
+            } else {
+                ShellTransportStatus::Connecting
+            },
+            daemon: None,
+        }
+    }
+}
+
 fn shell_id<T>(value: String) -> T
 where
     T: TryFrom<String>,
@@ -337,6 +369,38 @@ fn shell_event(id: String, occurred_at: Timestamp, kind: BackendEventKind) -> Ba
         kind,
         extensions: Vec::new(),
     }
+}
+
+fn start_daemon_handshake(
+    transport_state: Rc<RefCell<ShellTransportState>>,
+    content_stack: gtk::Stack,
+) {
+    {
+        let mut state = transport_state.borrow_mut();
+        state.status = ShellTransportStatus::Connecting;
+        state.daemon = None;
+    }
+    content_stack.set_visible_child_name(ViewState::Loading.page_name());
+
+    glib::MainContext::default().spawn_local(async move {
+        let result = DbusTransport::connect().await;
+        let status = ShellTransportStatus::from_transport_result(
+            result.as_ref().map(|_| ()).map_err(|error| *error),
+        );
+        let mut state = transport_state.borrow_mut();
+        state.status = status;
+        match result {
+            Ok(daemon) => {
+                state.daemon = Some(daemon);
+                content_stack.set_visible_child_name(ViewState::Connected.page_name());
+            }
+            Err(_) => {
+                // The transport error is intentionally discarded after it is
+                // mapped to the redacted, retryable shell status.
+                content_stack.set_visible_child_name(ViewState::Error.page_name());
+            }
+        }
+    });
 }
 
 struct ConversationPage {
@@ -473,9 +537,19 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_window(application: &adw::Application) {
-    let backend = Rc::new(RefCell::new(MockBackend::new()));
-    let fixture = backend.borrow().fixture().clone();
-    let model = Rc::new(RefCell::new(UiModel::from_fixture(&fixture)));
+    let mode = ShellTransportMode::from_environment();
+    let transport_state = Rc::new(RefCell::new(ShellTransportState::new(mode)));
+    let backend = mode
+        .uses_fixture()
+        .then(|| Rc::new(RefCell::new(MockBackend::new())));
+    let fixture = backend
+        .as_ref()
+        .map(|backend| backend.borrow().fixture().clone());
+    let model = Rc::new(RefCell::new(
+        fixture
+            .as_ref()
+            .map_or_else(UiModel::empty, UiModel::from_fixture),
+    ));
     let send_state = Rc::new(RefCell::new(MockSendState::default()));
     let timelines = Rc::new(RefCell::new(Vec::new()));
     let window = adw::ApplicationWindow::builder()
@@ -491,19 +565,26 @@ fn build_window(application: &adw::Application) {
         .transition_type(gtk::StackTransitionType::Crossfade)
         .build();
     append_state_pages(&content_stack);
-    for conversation in &model.borrow().conversations {
-        let page = conversation_page(conversation, &fixture, &send_state);
-        timelines.borrow_mut().push(Rc::clone(&page.timeline));
-        content_stack.add_titled(
-            &page.root,
-            Some(&conversation_page_name(&conversation.id)),
-            conversation.title(),
-        );
+    if let Some(fixture) = fixture.as_ref() {
+        let conversations = model.borrow().conversations.clone();
+        for conversation in &conversations {
+            let page = conversation_page(conversation, fixture, &send_state);
+            timelines.borrow_mut().push(Rc::clone(&page.timeline));
+            content_stack.add_titled(
+                &page.root,
+                Some(&conversation_page_name(&conversation.id)),
+                conversation.title(),
+            );
+        }
     }
-    if let Some(selected) = model.borrow().selected_conversation() {
-        content_stack.set_visible_child_name(&conversation_page_name(&selected.id));
+    if mode.uses_fixture() {
+        if let Some(selected) = model.borrow().selected_conversation() {
+            content_stack.set_visible_child_name(&conversation_page_name(&selected.id));
+        } else {
+            content_stack.set_visible_child_name(ViewState::Empty.page_name());
+        }
     } else {
-        content_stack.set_visible_child_name(ViewState::Empty.page_name());
+        content_stack.set_visible_child_name(ViewState::Loading.page_name());
     }
 
     let split_view = adw::NavigationSplitView::builder()
@@ -520,7 +601,9 @@ fn build_window(application: &adw::Application) {
 
     let setup_controller = SetupController::new();
     let setup_view = SetupView::new(&setup_controller);
-    install_synthetic_setup_backend(&setup_controller);
+    if mode.uses_fixture() {
+        install_synthetic_setup_backend(&setup_controller);
+    }
 
     let narrow_breakpoint = adw::Breakpoint::new(
         adw::BreakpointCondition::parse("max-width: 700sp")
@@ -547,7 +630,14 @@ fn build_window(application: &adw::Application) {
         shell_for_complete.set_visible_child_name(SHELL_CONVERSATIONS);
     });
 
-    install_window_actions(&window, &model, &split_view, &content_stack, &search_entry);
+    install_window_actions(
+        &window,
+        &model,
+        &split_view,
+        &content_stack,
+        &search_entry,
+        &transport_state,
+    );
     install_application_actions(
         application,
         &window,
@@ -556,19 +646,30 @@ fn build_window(application: &adw::Application) {
         &content_stack,
         &shell_stack,
     );
-    install_mock_event_feed(backend, timelines);
+    if let Some(backend) = backend {
+        install_mock_event_feed(backend, timelines);
+    } else {
+        start_daemon_handshake(Rc::clone(&transport_state), content_stack.clone());
+    }
     window.present();
 }
 
 fn append_state_pages(stack: &gtk::Stack) {
     let loading = adw::StatusPage::builder()
-        .title("Connecting to LiteBubbles")
-        .description("Preparing your conversations…")
+        .title(ShellTransportStatus::Connecting.title())
+        .description(ShellTransportStatus::Connecting.description())
         .build();
     let spinner = gtk::Spinner::new();
     spinner.set_spinning(true);
     loading.set_child(Some(&spinner));
     stack.add_named(&loading, Some(ViewState::Loading.page_name()));
+
+    let connected = adw::StatusPage::builder()
+        .icon_name("emblem-ok-symbolic")
+        .title(ShellTransportStatus::Connected.title())
+        .description(ShellTransportStatus::Connected.description())
+        .build();
+    stack.add_named(&connected, Some(ViewState::Connected.page_name()));
 
     let empty = adw::StatusPage::builder()
         .icon_name("mail-send-symbolic")
@@ -579,8 +680,8 @@ fn append_state_pages(stack: &gtk::Stack) {
 
     let error = adw::StatusPage::builder()
         .icon_name("dialog-error-symbolic")
-        .title("Conversations are unavailable")
-        .description("LiteBubbles could not load the conversation list.")
+        .title(ShellTransportStatus::Recoverable.title())
+        .description(ShellTransportStatus::Recoverable.description())
         .build();
     let retry = gtk::Button::builder()
         .label("Try again")
@@ -978,6 +1079,7 @@ fn install_window_actions(
     split_view: &adw::NavigationSplitView,
     content_stack: &gtk::Stack,
     search_entry: &gtk::SearchEntry,
+    transport_state: &Rc<RefCell<ShellTransportState>>,
 ) {
     let search = gio::SimpleAction::new("search", None);
     let search_target = search_entry.clone();
@@ -1002,13 +1104,18 @@ fn install_window_actions(
     let retry = gio::SimpleAction::new("retry", None);
     let model_for_retry = Rc::clone(model);
     let stack_for_retry = content_stack.clone();
+    let transport_for_retry = Rc::clone(transport_state);
     retry.connect_activate(move |_, _| {
-        let mut model = model_for_retry.borrow_mut();
-        model.state = ViewState::Ready;
-        if let Some(first) = model.conversations.first() {
-            let first_id = first.id.clone();
-            model.selected = Some(first_id.clone());
-            stack_for_retry.set_visible_child_name(&conversation_page_name(&first_id));
+        if transport_for_retry.borrow().mode.uses_fixture() {
+            let mut model = model_for_retry.borrow_mut();
+            model.state = ViewState::Ready;
+            if let Some(first) = model.conversations.first() {
+                let first_id = first.id.clone();
+                model.selected = Some(first_id.clone());
+                stack_for_retry.set_visible_child_name(&conversation_page_name(&first_id));
+            }
+        } else {
+            start_daemon_handshake(Rc::clone(&transport_for_retry), stack_for_retry.clone());
         }
     });
     window.add_action(&retry);

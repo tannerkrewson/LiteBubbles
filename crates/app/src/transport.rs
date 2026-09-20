@@ -3,9 +3,9 @@
 //! This module is the only app layer that knows about zbus or the wire
 //! protocol. Views and view models can depend on [`AppTransport`] without
 //! knowing how a daemon connection is created, negotiated, retried, or
-//! reported when it fails. The existing [`litebubbles_mock_backend`] fixture
-//! remains available to the current mock-driven shell; this boundary is ready
-//! for the later shell integration to choose either transport.
+//! reported when it fails. The GTK shell chooses [`ShellTransportMode::Dbus`]
+//! by default and keeps the existing [`litebubbles_mock_backend`] fixture
+//! behind an explicit development switch.
 
 use std::{
     fmt,
@@ -25,6 +25,45 @@ pub const CLIENT_NAME: &str = "litebubbles";
 
 /// Capabilities understood by this transport boundary.
 pub const CLIENT_CAPABILITIES: &[&str] = &["events"];
+
+/// Environment variable used to select the shell transport.
+pub const TRANSPORT_ENVIRONMENT_VARIABLE: &str = "LITEBUBBLES_TRANSPORT";
+
+/// Exact value that selects the deterministic fixture transport.
+pub const MOCK_TRANSPORT_VALUE: &str = "mock";
+
+/// Transport selected by the GTK shell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellTransportMode {
+    /// Use the user's session D-Bus and the daemon protocol.
+    Dbus,
+    /// Use the in-process synthetic fixture for development and tests.
+    Mock,
+}
+
+impl ShellTransportMode {
+    /// Selects the production transport unless the explicit mock switch is set.
+    pub fn from_environment() -> Self {
+        Self::from_value(
+            std::env::var(TRANSPORT_ENVIRONMENT_VARIABLE)
+                .ok()
+                .as_deref(),
+        )
+    }
+
+    /// Selects a mode from an environment value without reading process state.
+    pub fn from_value(value: Option<&str>) -> Self {
+        match value {
+            Some(MOCK_TRANSPORT_VALUE) => Self::Mock,
+            _ => Self::Dbus,
+        }
+    }
+
+    /// Returns whether this mode owns the synthetic fixture shell.
+    pub const fn uses_fixture(self) -> bool {
+        matches!(self, Self::Mock)
+    }
+}
 
 /// A successfully negotiated daemon protocol.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +140,12 @@ impl TransportError {
             Self::Unavailable | Self::NotNegotiated | Self::NotReady | Self::Failed
         )
     }
+
+    /// Converts any handshake failure into the shell's redacted recoverable
+    /// status. The specific protocol or D-Bus detail never crosses into the UI.
+    pub const fn shell_status(self) -> ShellTransportStatus {
+        ShellTransportStatus::Recoverable
+    }
 }
 
 impl fmt::Display for TransportError {
@@ -122,6 +167,50 @@ impl fmt::Display for TransportError {
 }
 
 impl std::error::Error for TransportError {}
+
+/// Safe status values exposed by the shell transport seam.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellTransportStatus {
+    /// A connection and protocol negotiation are in flight.
+    Connecting,
+    /// The daemon connection has completed the protocol handshake.
+    Connected,
+    /// The handshake failed and can be retried without exposing details.
+    Recoverable,
+}
+
+impl ShellTransportStatus {
+    /// Maps a transport result to a status without retaining its error detail.
+    pub fn from_transport_result<T>(result: Result<T, TransportError>) -> Self {
+        match result {
+            Ok(_) => Self::Connected,
+            Err(error) => error.shell_status(),
+        }
+    }
+
+    /// Returns whether the shell should offer retry.
+    pub const fn is_recoverable(self) -> bool {
+        matches!(self, Self::Recoverable)
+    }
+
+    /// Returns a safe title for a shell status page.
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Connecting => "Connecting to LiteBubbles",
+            Self::Connected => "Connected to LiteBubbles",
+            Self::Recoverable => "LiteBubbles service unavailable",
+        }
+    }
+
+    /// Returns a safe description for a shell status page.
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Connecting => "Preparing the daemon connection…",
+            Self::Connected => "The daemon handshake completed.",
+            Self::Recoverable => "The service could not be reached. You can retry.",
+        }
+    }
+}
 
 impl From<ProtocolError> for TransportError {
     fn from(error: ProtocolError) -> Self {
@@ -419,6 +508,63 @@ mod tests {
         assert_eq!(request.min_version, protocol::MIN_SUPPORTED_VERSION);
         assert_eq!(request.max_version, protocol::MAX_SUPPORTED_VERSION);
         assert_eq!(request.capabilities, vec!["events"]);
+    }
+
+    #[test]
+    fn shell_transport_defaults_to_dbus_and_only_explicit_mock_selects_fixture() {
+        assert_eq!(
+            ShellTransportMode::from_value(None),
+            ShellTransportMode::Dbus
+        );
+        assert_eq!(
+            ShellTransportMode::from_value(Some(MOCK_TRANSPORT_VALUE)),
+            ShellTransportMode::Mock
+        );
+        assert_eq!(
+            ShellTransportMode::from_value(Some("MOCK")),
+            ShellTransportMode::Dbus
+        );
+        assert_eq!(
+            ShellTransportMode::from_value(Some("fixture")),
+            ShellTransportMode::Dbus
+        );
+    }
+
+    #[test]
+    fn shell_transport_failures_map_to_one_redacted_recoverable_status() {
+        let failures = [
+            TransportError::Unavailable,
+            TransportError::NotNegotiated,
+            TransportError::ProtocolMismatch,
+            TransportError::InvalidRequest,
+            TransportError::NotFound,
+            TransportError::PermissionDenied,
+            TransportError::NotReady,
+            TransportError::Conflict,
+            TransportError::Unsupported,
+            TransportError::Failed,
+        ];
+
+        for error in failures {
+            assert_eq!(error.shell_status(), ShellTransportStatus::Recoverable);
+            assert!(error.shell_status().is_recoverable());
+            assert!(!error.shell_status().description().contains("D-Bus"));
+        }
+
+        assert_eq!(
+            ShellTransportStatus::from_transport_result(Result::<(), _>::Ok(())),
+            ShellTransportStatus::Connected
+        );
+        assert_eq!(
+            ShellTransportStatus::from_transport_result(Result::<(), _>::Err(
+                TransportError::Unavailable,
+            )),
+            ShellTransportStatus::Recoverable
+        );
+        assert_eq!(
+            ShellTransportStatus::Recoverable.description(),
+            "The service could not be reached. You can retry."
+        );
     }
 
     #[test]

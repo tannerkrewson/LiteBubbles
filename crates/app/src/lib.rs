@@ -16,4 +16,7 @@ pub use timeline::{
     DaySeparator, GroupPosition, LoadState, RenderedPart, ScrollState, TimelineEventEffect,
     TimelineMessage, TimelineModel, TimelineRow, TimelineView, TimestampLabels, build_timeline,
 };
-pub use transport::{AppTransport, DbusTransport, NegotiatedProtocol, TransportError};
+pub use transport::{
+    AppTransport, DbusTransport, MOCK_TRANSPORT_VALUE, NegotiatedProtocol, ShellTransportMode,
+    ShellTransportStatus, TRANSPORT_ENVIRONMENT_VARIABLE, TransportError,
+};
