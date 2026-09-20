@@ -5,6 +5,7 @@ templates from the Fractal reference project.
 The audited OpenBubbles/rustpush revision is SSPL-1.0 licensed. Its
 LICENSE.exceptions file names OpenBubbles for its special exception; it does not
 name LiteBubbles. Distribution and the final rustpush source boundary require
-separate legal review. The revision and its nested dependencies remain blocked
-from the build until the missing FairPlay source decision documented in
-docs/lb-008-blocker.md is resolved.
+separate legal review. LiteBubbles records the exact revision as a public
+submodule and applies a small source patch for public compilation; the patch
+does not add FairPlay certificates, private keys, or OpenBubbles binaries.
+Genuine production signing remains a separate reviewed boundary.

@@ -1,0 +1,89 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index bdaf528..e78275e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -7,6 +7,9 @@ edition = "2021"
+ remote-anisette-v3 = ["omnisette/remote-anisette-v3", "icloud_auth/remote-anisette-v3"]
+ remote-clearadi = ["omnisette/remote-clearadi", "icloud_auth/remote-clearadi"]
+ macos-validation-data = ["dep:open-absinthe"]
++# Development and CI builds may opt into the explicit no-signer path.  It is
++# intentionally not a source of Apple activation material.
++dummy-fairplay = []
+ default = ["macos-validation-data"]
+ 
+ [dependencies]
+diff --git a/src/activation.rs b/src/activation.rs
+index d9b2d36..edc89e3 100644
+--- a/src/activation.rs
++++ b/src/activation.rs
+@@ -1,10 +1,7 @@
+ use keystore::{KeystoreAccessRules, KeystoreDigest, KeystorePadding, KeystorePublicKey, KeystoreSignKey, RsaKey};
+-use openssl::{hash::MessageDigest, nid::Nid, pkey::{PKey, Params}, rsa::{Padding, Rsa}, sign::Signer, x509::{X509, X509Name, X509Req}};
++use openssl::x509::X509;
+ use plist::{Data, Value};
+-use rand::{seq::SliceRandom, thread_rng};
+-use rasn::types::Oid;
+ use regex::Regex;
+-use reqwest::Version;
+ use serde::Serialize;
+ use x509_cert::{attr::AttributeTypeAndValue, der::{Decode, Encode, EncodePem, asn1::{BitString, Null, SetOfVec, Utf8StringRef}, pem::LineEnding}, name::{Name, RdnSequence, RelativeDistinguishedName}, request::{CertReq, CertReqInfo}, spki::{AlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfo}};
+ 
+@@ -35,33 +32,14 @@ struct ActivationRequest {
+     fair_play_signature: Data
+ }
+ 
+-macro_rules! include_cert {
+-    ($name:literal) => {
+-        (include_bytes!(concat!("../certs/fairplay/", $name, ".crt")), include_bytes!(concat!("../certs/fairplay/", $name, ".pem")))
+-    };
++#[cfg(feature = "dummy-fairplay")]
++fn fairplay_sign(_data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
++    Err(PushError::DummyFairplayUnavailable)
+ }
+ 
+-const FAIRPLAY_KEYS: &[(&'static [u8], &'static [u8])] = &[
+-    include_cert!("4056631661436364584235346952193"),
+-    include_cert!("4056631661436364584235346952194"),
+-    include_cert!("4056631661436364584235346952195"),
+-    include_cert!("4056631661436364584235346952196"),
+-    include_cert!("4056631661436364584235346952197"),
+-    include_cert!("4056631661436364584235346952198"),
+-    include_cert!("4056631661436364584235346952199"),
+-    include_cert!("4056631661436364584235346952200"),
+-    include_cert!("4056631661436364584235346952201"),
+-    include_cert!("4056631661436364584235346952208"),
+-];
+-
+-fn fairplay_sign(data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
+-    let (cert, key) = FAIRPLAY_KEYS.choose(&mut thread_rng()).expect("no keys!");
+-
+-    let key = PKey::private_key_from_der(&key)?;
+-
+-    let mut signer = Signer::new(MessageDigest::sha1(), &key)?;
+-    signer.set_rsa_padding(Padding::PKCS1)?;
+-    Ok((*cert, signer.sign_oneshot_to_vec(data)?))
++#[cfg(not(feature = "dummy-fairplay"))]
++fn fairplay_sign(_data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
++    Err(PushError::FairplaySignerUnavailable)
+ }
+ 
+ pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, PushError> {
+@@ -139,4 +117,3 @@ pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, Pu
+         private: key
+     })
+ }
+-
+diff --git a/src/error.rs b/src/error.rs
+index 9452961..d7a89e3 100644
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -17,4 +17,8 @@ use crate::{aps::APSMessage, ids::user::{IDSError, SupportAlert}, util::Resource
+ 
+ #[derive(Error, Debug)]
+ pub enum PushError {
++    #[error("FairPlay signing is unavailable in this public build; configure a production signer before activation")]
++    FairplaySignerUnavailable,
++    #[error("dummy FairPlay mode is compile-only and cannot activate Apple services")]
++    DummyFairplayUnavailable,
+     #[error("Cryptography error: {0}")]
+     SSLError(#[from] ErrorStack),

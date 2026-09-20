@@ -1,0 +1,3 @@
+[submodule "vendor/rustpush"]
+	path = vendor/rustpush
+	url = https://github.com/OpenBubbles/rustpush.git
