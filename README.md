@@ -69,9 +69,9 @@ This repository is under active foundational development. Capability claims
 will only be made after the corresponding pinned `rustpush` behavior is
 implemented and tested.
 
-LB-011 is not yet acceptance-complete: it depends on LB-010's daemon/backend
-implementation. The current `litebubblesd` is a placeholder and does not own
-the D-Bus name, so the installed `Type=dbus` unit cannot become healthy until
-that work lands. LB-008 also records the exact rustpush build blocker: the
-audited upstream revision references ten missing FairPlay certificate/key
-pairs under `certs/fairplay/`.
+LB-011 is not yet acceptance-complete: it depends on the live backend adapter.
+The backend-independent LB-010 service boundary now owns the versioned D-Bus
+name and storage-backed state, while production refresh/send operations remain
+explicitly unavailable until LB-050 unblocks rustpush. LB-008 records the
+exact rustpush build blocker: the audited upstream revision references ten
+missing FairPlay certificate/key pairs under `certs/fairplay/`.

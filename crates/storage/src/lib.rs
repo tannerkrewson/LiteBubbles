@@ -665,6 +665,17 @@ impl Store {
             .collect()
     }
 
+    /// Loads attachment metadata and its local storage representation.
+    ///
+    /// Callers such as the D-Bus service must map the result to a bodyless
+    /// reference before crossing a process boundary.
+    pub fn get_attachment(
+        &self,
+        id_value: &litebubbles_core::AttachmentId,
+    ) -> Result<Option<Attachment>, StorageError> {
+        load_attachment(&self.connection, id_value.as_str())
+    }
+
     pub fn save_message(&mut self, message: &Message) -> Result<(), StorageError> {
         domain("message", message.validate())?;
         self.transaction(|tx| {

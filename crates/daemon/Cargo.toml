@@ -6,5 +6,18 @@ license-file.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+async-trait = "0.1"
+futures-lite = "2"
+async-channel = "2"
+litebubbles-core = { path = "../core" }
+litebubbles-protocol = { path = "../protocol" }
 litebubbles-rustpush-backend = { path = "../rustpush-backend" }
 litebubbles-storage = { path = "../storage" }
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber = "0.3"
+signal-hook = "0.3"
+zbus = { version = "=5.12.0", features = ["option-as-array"] }
+
+[dev-dependencies]
+litebubbles-mock-backend = { path = "../mock-backend" }
