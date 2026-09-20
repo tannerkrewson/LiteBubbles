@@ -453,10 +453,10 @@ impl TimelineView {
             let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
                 return;
             };
-            if let Some(child) = item.child()
-                && let Ok(container) = child.downcast::<gtk::Box>()
-            {
-                clear_box(&container);
+            if let Some(child) = item.child() {
+                if let Ok(container) = child.downcast::<gtk::Box>() {
+                    clear_box(&container);
+                }
             }
         });
 
@@ -596,11 +596,12 @@ impl TimelineView {
             LoadState::Ready => "ready",
             LoadState::Error(_) => "error",
         };
-        if let LoadState::Error(message) = self.model.borrow().load_state()
-            && let Some(page) = self.stack.child_by_name("error")
-            && let Some(status_page) = page.downcast_ref::<adw::StatusPage>()
-        {
-            status_page.set_description(Some(message));
+        if let LoadState::Error(message) = self.model.borrow().load_state() {
+            if let Some(page) = self.stack.child_by_name("error") {
+                if let Some(status_page) = page.downcast_ref::<adw::StatusPage>() {
+                    status_page.set_description(Some(message));
+                }
+            }
         }
         self.stack.set_visible_child_name(name);
     }
