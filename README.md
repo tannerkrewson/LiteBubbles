@@ -32,8 +32,46 @@ The architecture and protocol boundaries are documented in `docs/`. Reference
 repositories are checked out outside this repository and are never vendored
 into it.
 
+## Local user installation
+
+Build release binaries inside the Toolbx, then run the installer as the regular
+user on the Silverblue host. The host is not changed with `rpm-ostree`.
+
+```sh
+toolbox enter litebubbles-dev
+cargo build --workspace --release
+exit
+./scripts/install-user.sh
+systemctl --user status litebubblesd.service
+```
+
+The installer places `litebubbles` and `litebubblesd` in
+`$HOME/.local/bin`, installs the desktop entry and D-Bus activation file below
+`$XDG_DATA_HOME` (or `$HOME/.local/share`), and installs the user unit below
+`$XDG_CONFIG_HOME/systemd/user` (or `$HOME/.config/systemd/user`). It enables
+the daemon for the user session so it is independent of the application
+window's lifetime. Use `./scripts/install-user.sh --no-start` when inspecting
+the generated files without starting the service.
+
+Remove only the files installed by this workflow with:
+
+```sh
+./scripts/uninstall-user.sh
+```
+
+The D-Bus service is `io.github.tannerkrewson.LiteBubbles.Backend`, and its
+object/interface contract is defined in the protocol crate. No OpenBubbles
+data, import, or host package is needed by these scripts.
+
 ## Status
 
 This repository is under active foundational development. Capability claims
 will only be made after the corresponding pinned `rustpush` behavior is
 implemented and tested.
+
+LB-011 is not yet acceptance-complete: it depends on LB-010's daemon/backend
+implementation. The current `litebubblesd` is a placeholder and does not own
+the D-Bus name, so the installed `Type=dbus` unit cannot become healthy until
+that work lands. LB-008 also records the exact rustpush build blocker: the
+audited upstream revision references ten missing FairPlay certificate/key
+pairs under `certs/fairplay/`.
