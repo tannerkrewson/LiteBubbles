@@ -423,6 +423,9 @@ impl TimelineView {
         let factory = gtk::SignalListItemFactory::new();
 
         factory.connect_setup(|_, item| {
+            let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
             let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
             container.set_hexpand(true);
             item.set_child(Some(&container));
@@ -430,6 +433,9 @@ impl TimelineView {
 
         let renderer_for_bind = Rc::clone(&part_renderer);
         factory.connect_bind(move |_, item| {
+            let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
             let Some(object) = item.item() else { return };
             let Ok(boxed) = object.downcast::<glib::BoxedAnyObject>() else {
                 return;
@@ -444,6 +450,9 @@ impl TimelineView {
         });
 
         factory.connect_unbind(|_, item| {
+            let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
             if let Some(child) = item.child()
                 && let Ok(container) = child.downcast::<gtk::Box>()
             {
