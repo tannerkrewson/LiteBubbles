@@ -2,14 +2,14 @@
 //!
 //! The provider creates only the validation artifact.  It never exposes the
 //! foreign library, FairPlay keys, or validation implementation to GTK or
-//! D-Bus.  The remaining FairPlay device-activation signer is deliberately a
-//! separate rustpush boundary and still reports unavailable in public builds.
+//! D-Bus.  The activation signer receives only the path to the user-local
+//! material directory through rustpush' backend configuration boundary.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use litebubbles_validation_provider::{
     HardwareConfig as ProviderHardwareConfig, OpenBubblesValidationProvider, ValidationError,
-    ValidationProvider, ValidationRequest,
+    ValidationProvider, ValidationRequest, default_component_dir, fairplay_directory,
 };
 use plist::{Data, Value};
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,7 @@ pub struct ValidationBackedMacOsConfig {
     upstream: rustpush::macos::MacOSConfig,
     hardware: MacHardwareInput,
     provider: Arc<dyn ValidationProvider>,
+    fairplay_keys_dir: Option<PathBuf>,
 }
 
 impl ValidationBackedMacOsConfig {
@@ -75,14 +76,24 @@ impl ValidationBackedMacOsConfig {
             upstream,
             hardware,
             provider,
+            fairplay_keys_dir: None,
         }
+    }
+
+    /// Attach the private material directory prepared by production setup.
+    /// The path is retained only by the backend configuration and is never a
+    /// D-Bus or UI value.
+    pub fn with_fairplay_keys_dir(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.fairplay_keys_dir = Some(directory.into());
+        self
     }
 
     /// Build the production configuration using the component installed by
     /// `litebubbles-validation-component`.
     pub fn from_default_provider(hardware: MacHardwareInput) -> Result<Self, ValidationError> {
         let provider = OpenBubblesValidationProvider::from_default_paths()?;
-        Ok(Self::new(hardware, Arc::new(provider)))
+        let fairplay_keys_dir = fairplay_directory(default_component_dir()?);
+        Ok(Self::new(hardware, Arc::new(provider)).with_fairplay_keys_dir(fairplay_keys_dir))
     }
 
     pub fn hardware(&self) -> &MacHardwareInput {
@@ -206,6 +217,10 @@ impl rustpush::OSConfig for ValidationBackedMacOsConfig {
 
     fn get_udid(&self) -> String {
         self.upstream.get_udid()
+    }
+
+    fn get_fairplay_keys_dir(&self) -> Option<PathBuf> {
+        self.fairplay_keys_dir.clone()
     }
 }
 

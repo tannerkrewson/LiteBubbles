@@ -5,6 +5,7 @@
 //! and can be unavailable while the local, read-only service remains useful.
 
 use std::{
+    fs,
     path::Path,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -20,7 +21,13 @@ use litebubbles_protocol::{
     RefreshRequest, RefreshResponse, RefreshState, SendMessageRequest, SendMessageResponse,
     Settings, SyncChanged, SyncState, Timestamp, UpdateSettingsRequest,
 };
+use litebubbles_rustpush_backend::{
+    LiveError, LiveSession, MacHardwareInput, SessionSnapshot, TwoFactorPrompt,
+    initialize_local_keystore,
+};
+use litebubbles_storage::{AppPaths, GnomeSecretService, SecretKey, SecretStore, SecretValue};
 use litebubbles_storage::{MessageCursor, MessagePage, StorageError, Store};
+use rand::RngCore;
 use signal_hook::{
     consts::signal::{SIGINT, SIGTERM},
     iterator::Signals,
@@ -30,7 +37,212 @@ use tracing::{debug, error, info, warn};
 use zbus::object_server::SignalEmitter;
 
 /// Exact blocker shared by service errors, sync state, and documentation.
-pub const RUSTPUSH_BLOCKER: &str = "live rustpush adapter unavailable: LB-050 public compilation is ready, but the production FairPlay signer and Apple account setup remain incomplete; see docs/validation-provider.md and docs/lb-008-blocker.md";
+pub const RUSTPUSH_BLOCKER: &str = "live rustpush synchronization is not connected to the general D-Bus service yet; run litebubblesd setup before using the production rustpush path";
+
+/// User-facing setup/send errors deliberately contain no credentials, tokens,
+/// hardware payloads, or message bodies.
+#[derive(Debug, Error)]
+pub enum ProductionCommandError {
+    #[error(
+        "Apple compatibility setup is required. Run scripts/setup-production.sh and provide an official supported OpenBubbles release."
+    )]
+    MissingCompatibility,
+    #[error("the Apple account identifier is required")]
+    MissingAccount,
+    #[error("the saved Mac activation input is missing; run litebubblesd setup first")]
+    MissingHardware,
+    #[error("the saved Apple session is missing; run litebubblesd setup first")]
+    MissingSession,
+    #[error("the saved Apple session or hardware input is invalid")]
+    InvalidSavedState,
+    #[error("the supplied Mac activation input is invalid: {0}")]
+    InvalidHardware(String),
+    #[error("the Secret Service is unavailable for LiteBubbles setup")]
+    SecretStore,
+    #[error("the local Apple session could not be prepared")]
+    LocalState,
+    #[error("Apple setup failed: {0}")]
+    Backend(String),
+}
+
+fn production_key(
+    service: &'static str,
+    account: &str,
+) -> Result<SecretKey, ProductionCommandError> {
+    if account.trim().is_empty() {
+        return Err(ProductionCommandError::MissingAccount);
+    }
+    SecretKey::new(service, account).map_err(|_| ProductionCommandError::MissingAccount)
+}
+
+async fn production_secrets() -> Result<GnomeSecretService, ProductionCommandError> {
+    GnomeSecretService::connect()
+        .await
+        .map_err(|_| ProductionCommandError::SecretStore)
+}
+
+async fn get_production_secret(
+    secrets: &GnomeSecretService,
+    key: &SecretKey,
+) -> Result<Option<Vec<u8>>, ProductionCommandError> {
+    secrets
+        .get(key)
+        .await
+        .map(|value| value.map(SecretValue::into_bytes))
+        .map_err(|_| ProductionCommandError::SecretStore)
+}
+
+async fn ensure_keystore_key(
+    secrets: &GnomeSecretService,
+    account: &str,
+) -> Result<[u8; 32], ProductionCommandError> {
+    let key = production_key("rustpush-keystore", account)?;
+    if let Some(value) = get_production_secret(secrets, &key).await? {
+        return value
+            .try_into()
+            .map_err(|_| ProductionCommandError::InvalidSavedState);
+    }
+    let mut value = [0_u8; 32];
+    rand::thread_rng().fill_bytes(&mut value);
+    secrets
+        .set(&key, SecretValue::from_bytes(value.to_vec()))
+        .await
+        .map_err(|_| ProductionCommandError::SecretStore)?;
+    Ok(value)
+}
+
+async fn prepare_production_state(
+    account: &str,
+) -> Result<(AppPaths, GnomeSecretService), ProductionCommandError> {
+    let paths = AppPaths::from_environment().map_err(|_| ProductionCommandError::LocalState)?;
+    paths
+        .ensure_data_dir()
+        .map_err(|_| ProductionCommandError::LocalState)?;
+    fs::create_dir_all(paths.cache_dir()).map_err(|_| ProductionCommandError::LocalState)?;
+    let secrets = production_secrets().await?;
+    let keystore_key = ensure_keystore_key(&secrets, account).await?;
+    initialize_local_keystore(
+        paths.data_dir().join("rustpush/keystore.plist"),
+        keystore_key,
+    )
+    .map_err(|_| ProductionCommandError::LocalState)?;
+    Ok((paths, secrets))
+}
+
+fn backend_error(error: LiveError) -> ProductionCommandError {
+    match error {
+        LiveError::Validation(_) => ProductionCommandError::MissingCompatibility,
+        other => ProductionCommandError::Backend(other.to_string()),
+    }
+}
+
+/// Run the first-time production setup path. The caller supplies the password
+/// and a callback for 2FA so neither is placed in process arguments or logs.
+pub async fn run_production_setup<F>(
+    account: String,
+    hardware_payload: String,
+    password: String,
+    mut prompt: F,
+) -> Result<(), ProductionCommandError>
+where
+    F: FnMut(TwoFactorPrompt) -> String,
+{
+    let hardware = MacHardwareInput::parse_base64(&hardware_payload)
+        .map_err(|error| ProductionCommandError::InvalidHardware(error.to_string()))?;
+    let (paths, secrets) = prepare_production_state(&account).await?;
+    let session_key = production_key("apple-session", &account)?;
+    let existing = get_production_secret(&secrets, &session_key).await?;
+    let session = LiveSession::connect(
+        hardware,
+        existing.as_deref(),
+        &account,
+        Some(&password),
+        paths.data_dir().join("anisette"),
+        paths.cache_dir().join("ids-key-cache.plist"),
+        &mut prompt,
+    )
+    .await
+    .map_err(backend_error)?;
+    let snapshot = session.snapshot().await.map_err(backend_error)?;
+    secrets
+        .set(&session_key, SecretValue::from_bytes(snapshot.into_bytes()))
+        .await
+        .map_err(|_| ProductionCommandError::SecretStore)?;
+    let hardware_key = production_key("apple-hardware", &account)?;
+    secrets
+        .set(
+            &hardware_key,
+            SecretValue::from_bytes(hardware_payload.trim().as_bytes().to_vec()),
+        )
+        .await
+        .map_err(|_| ProductionCommandError::SecretStore)?;
+    Ok(())
+}
+
+async fn load_live_session(
+    account: &str,
+) -> Result<(AppPaths, GnomeSecretService, LiveSession, SecretKey), ProductionCommandError> {
+    let (paths, secrets) = prepare_production_state(account).await?;
+    let hardware_key = production_key("apple-hardware", account)?;
+    let hardware_payload = get_production_secret(&secrets, &hardware_key)
+        .await?
+        .ok_or(ProductionCommandError::MissingHardware)?;
+    let hardware_payload = String::from_utf8(hardware_payload)
+        .map_err(|_| ProductionCommandError::InvalidSavedState)?;
+    let hardware = MacHardwareInput::parse_base64(&hardware_payload)
+        .map_err(|_| ProductionCommandError::InvalidSavedState)?;
+    let session_key = production_key("apple-session", account)?;
+    let snapshot = get_production_secret(&secrets, &session_key)
+        .await?
+        .ok_or(ProductionCommandError::MissingSession)?;
+    let snapshot = SessionSnapshot::from_bytes(snapshot)
+        .map_err(|_| ProductionCommandError::InvalidSavedState)?;
+    let session = LiveSession::connect(
+        hardware,
+        Some(snapshot.as_bytes()),
+        account,
+        None,
+        paths.data_dir().join("anisette"),
+        paths.cache_dir().join("ids-key-cache.plist"),
+        &mut |_| String::new(),
+    )
+    .await
+    .map_err(backend_error)?;
+    Ok((paths, secrets, session, session_key))
+}
+
+pub async fn run_production_send(
+    account: String,
+    destination: String,
+    text: String,
+) -> Result<(), ProductionCommandError> {
+    let (_paths, secrets, session, session_key) = load_live_session(&account).await?;
+    session
+        .send_text(&destination, &text)
+        .await
+        .map_err(backend_error)?;
+    let snapshot = session.snapshot().await.map_err(backend_error)?;
+    secrets
+        .set(&session_key, SecretValue::from_bytes(snapshot.into_bytes()))
+        .await
+        .map_err(|_| ProductionCommandError::SecretStore)
+}
+
+pub async fn run_production_listen(
+    account: String,
+    timeout: std::time::Duration,
+) -> Result<(), ProductionCommandError> {
+    let (_paths, secrets, session, session_key) = load_live_session(&account).await?;
+    session
+        .wait_for_message(timeout)
+        .await
+        .map_err(backend_error)?;
+    let snapshot = session.snapshot().await.map_err(backend_error)?;
+    secrets
+        .set(&session_key, SecretValue::from_bytes(snapshot.into_bytes()))
+        .await
+        .map_err(|_| ProductionCommandError::SecretStore)
+}
 
 /// Errors returned by a backend adapter.  These deliberately contain no
 /// account identifiers, message bodies, credentials, or remote addresses.
@@ -47,7 +259,7 @@ pub enum AdapterError {
 /// Seam between the daemon protocol service and a live or test backend.
 ///
 /// LB-010 intentionally provides the unavailable implementation below rather
-/// than pretending to implement rustpush.  A later LB-050 follow-up can add a
+/// than pretending to implement rustpush.  A later live-sync issue can add a
 /// real adapter without changing the D-Bus service boundary.
 #[async_trait]
 pub trait BackendAdapter: Send + Sync {
@@ -953,13 +1165,7 @@ mod tests {
         let service = fixture_service();
         let account = block_on(service.get_account_state()).expect("account state");
         assert_eq!(account.account_id.as_str(), "account-fixture");
-        assert!(
-            account
-                .sync
-                .error
-                .as_deref()
-                .is_some_and(|value| value.contains("LB-050"))
-        );
+        assert_eq!(account.sync.error.as_deref(), Some(RUSTPUSH_BLOCKER));
 
         let attachment =
             block_on(service.get_attachment(Id::new("attachment-garden-photo").unwrap()))

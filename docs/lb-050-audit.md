@@ -92,12 +92,12 @@ adapters around an x86_64 `openbubbles.so` from an OpenBubbles release:
 - `fairplay-certs` extracts the ten certificate/private-key pairs from fixed
   offsets in that same shared library and writes rustpush-compatible files.
 
-The first adapter is the basis for the preferred opaque local provider. The
-second is raw key extraction and is not the primary LiteBubbles design. The
+The first adapter is the basis for the opaque local provider. The second is
+the documented local extraction path used by LiteBubbles setup: it validates
+the pairs and writes them privately under the user's XDG data directory. The
 public `open-absinthe` wrapper is Android-specific and cannot be reused as-is
-on Fedora. The runtime FairPlay signing boundary is tracked separately in
-LB-064 (#62), pending a reviewed rustpush/provider API or an explicitly
-reviewed fallback.
+on Fedora. LiteBubbles keeps the extracted files out of source control and
+does not redistribute the library or keys.
 
 ## Genuine Mac hardware input
 
@@ -138,8 +138,9 @@ Mac Hardware Info payloads are parsed independently by
 boundary when setup state is retained. No real component, Apple credential, or
 hardware payload was used in tests. Consequently, this work establishes the
 public build and production integration boundary but does not claim successful
-FairPlay device activation, IDS registration, or APS connection; those remain
-tracked in LB-064 and LB-063.
+FairPlay device activation, IDS registration, or APS connection until the
+interactive user-supplied smoke test is run. The remaining real-service work
+is tracked in LB-063.
 
-Until the last boundary is resolved, LiteBubbles must report production Apple
-activation as unavailable rather than treating dummy material as valid.
+Until that smoke test succeeds, LiteBubbles must report Apple setup as
+unverified rather than treating dummy material as valid.

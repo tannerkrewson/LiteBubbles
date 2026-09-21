@@ -10,9 +10,11 @@ types. The core and UI-facing crates remain independent of that implementation.
 
 The daemon's backend-independent service boundary lives in `crates/daemon`.
 It owns SQLite-backed protocol state and exports the versioned D-Bus interface;
-the `BackendAdapter` seam remains explicit while LB-050 blocks a reproducible
-rustpush build. See [`lb-010-daemon-service.md`](lb-010-daemon-service.md).
+the `BackendAdapter` seam remains explicit while the live rustpush session is
+being promoted into the general D-Bus synchronization service. See
+[`lb-010-daemon-service.md`](lb-010-daemon-service.md).
 
 Credential and ordinary session-state storage is a separate boundary in
 `crates/storage`; see [`lb-012-credentials.md`](lb-012-credentials.md). It
-does not claim live backend integration while LB-008/LB-050 remains blocked.
+does not expose rustpush objects or sensitive Apple session material to the
+GTK-facing protocol.

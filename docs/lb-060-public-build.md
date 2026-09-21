@@ -1,8 +1,8 @@
 # LB-060 public rustpush build
 
-Status: public compilation is unblocked. Mac validation-data generation is
-implemented behind the separate LB-061 provider boundary. Genuine FairPlay
-device-activation signing remains a separate production task in LB-064.
+Status: public compilation and the local production FairPlay signer path are
+implemented. Mac validation-data generation remains behind the separate
+user-supplied compatibility component.
 
 ## Pinned source and original failure
 
@@ -59,10 +59,11 @@ direct `cargo` commands do not download or create FairPlay material.
 
 ## Deliberate production boundary
 
-The default build now compiles and links rustpush, but it does not claim Apple
-activation. The production validation provider can call a user-supplied,
-hash-validated opaque compatibility component for the Mac validation-data
-exchange, but that does not replace the FairPlay signer used by
-`rustpush::activation`. The signer work is tracked separately in LB-064 so a
-missing private resource cannot block public backend, UI, or CI development
-and cannot be mistaken for working Apple credentials.
+The default build compiles and links rustpush without private source-tree
+files. In production, setup accepts a user-supplied official release archive,
+verifies the pinned library hash, derives the FairPlay pairs locally using the
+public build-module extraction algorithm, and passes their private directory
+to `rustpush::activation` through the backend-only OS configuration. The same
+archive supplies the opaque helper used for Mac validation data. CI never
+needs either the archive or Apple credentials, and no real Apple activation is
+claimed until the interactive smoke test has actually been run.

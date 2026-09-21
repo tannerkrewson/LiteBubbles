@@ -4,9 +4,14 @@
 //! rustpush revision. Upstream types stay behind this boundary.
 
 pub mod hardware;
+pub mod live;
 pub mod validation;
 
 pub use hardware::{HardwareInputError, MacHardwareConfig, MacHardwareInput, MacSoftwareInfo};
+pub use live::{
+    LiveError, LiveSession, SessionSnapshot, TwoFactorPrompt, initialize_local_keystore,
+    new_keystore_key,
+};
 pub use validation::{ValidationBackedMacOsConfig, production_validation_provider};
 
 use thiserror::Error;

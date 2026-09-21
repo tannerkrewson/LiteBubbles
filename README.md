@@ -71,7 +71,7 @@ inspecting the generated files without starting the service.
 ### Apple production validation
 
 Public builds and CI do not need FairPlay files, Apple credentials, or a Mac.
-They cannot perform real Apple activation until a production validation
+They cannot perform real Apple activation until a production compatibility
 component is installed. If you have obtained a compatible official
 OpenBubbles release archive yourself, install and verify only its required
 component with:
@@ -87,18 +87,21 @@ The user installer also installs this wrapper as
 hash-validating `litebubbles-validation-component` command.
 
 The command verifies the supported version and SHA-256, installs the opaque
-library in the user data directory, and never extracts or displays private
-FairPlay material. Automatic download is not enabled because LiteBubbles has
-not established a redistribution grant for that artifact. Genuine Mac
-activation information is entered separately as the base64 payload produced by
-Mac Hardware Info; see [`docs/validation-provider.md`](docs/validation-provider.md)
-and [`docs/hardware-input.md`](docs/hardware-input.md).
+library in the user data directory, and derives the FairPlay signer material
+there. The private files are mode-restricted, never printed, and never placed
+in the source checkout. Automatic download is not enabled because LiteBubbles
+does not redistribute that third-party artifact. Genuine Mac activation
+information is entered separately with:
 
-Validation-component readiness is not complete production readiness. Real
-Apple activation still requires a separate production FairPlay
-device-activation signer. The public build does not provide or configure that
-signer, and the development dummy is not a production credential; LB-064 must
-be resolved before LiteBubbles can report real activation as available.
+```sh
+litebubblesd setup --account 'you@example.com' \
+  --hardware-file /path/to/mac-hardware-info-payload.txt
+```
+
+The command prompts for the Apple password and any required two-factor code.
+The payload is stored in Secret Service storage, not SQLite, logs, D-Bus, or
+the repository. See [`docs/validation-provider.md`](docs/validation-provider.md)
+and [`docs/hardware-input.md`](docs/hardware-input.md).
 
 Remove only the files installed by this workflow with:
 
@@ -116,11 +119,11 @@ This repository is under active foundational development. Capability claims
 will only be made after the corresponding pinned `rustpush` behavior is
 implemented and tested.
 
-LB-011 is not yet acceptance-complete: it depends on the live backend adapter.
-The backend-independent LB-010 service boundary now owns the versioned D-Bus
-name and storage-backed state. Public rustpush compilation is implemented by
-the audited, separable preparation patch documented in
-[`docs/lb-060-public-build.md`](docs/lb-060-public-build.md); genuine Apple
-FairPlay signing remains explicitly unavailable until the separate signer
-boundary in LB-064 is complete. The validation provider itself is documented
-in [`docs/validation-provider.md`](docs/validation-provider.md).
+The backend-independent LB-010 service boundary owns the versioned D-Bus name
+and storage-backed state. Public rustpush compilation and the user-local
+production signer/provider are implemented by the audited preparation path
+documented in [`docs/lb-060-public-build.md`](docs/lb-060-public-build.md) and
+[`docs/validation-provider.md`](docs/validation-provider.md). Real Apple
+service activation remains an interactive, user-supplied smoke test; this
+checkout has no Apple credentials, activation payload, or proprietary release
+artifact with which to claim that test.

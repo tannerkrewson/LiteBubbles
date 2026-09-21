@@ -7,13 +7,13 @@ Account, conversation, history, settings, refresh, and attachment metadata
 operations are available without GTK. Attachments cross D-Bus only as
 metadata references; bodies remain in daemon-owned storage.
 
-The production daemon deliberately uses `UnavailableBackend`. It does not
-pretend to send messages or synchronize through rustpush. Public rustpush
-compilation is no longer the blocker: the preparation patch and evidence are
-in [`docs/lb-008-blocker.md`](lb-008-blocker.md). A future live adapter can
-use the backend-only validation provider without changing the D-Bus service
-boundary. Full Apple activation still depends on the separate FairPlay signer
-boundary and real account setup.
+The long-running D-Bus daemon still uses `UnavailableBackend` for the general
+GUI service until the stored Apple session is promoted into the full sync
+adapter. The production setup/send/listen commands in `litebubblesd` already
+use rustpush directly, the backend-only validation provider, and Secret
+Service state; they do not pretend to be complete GUI synchronization. Public
+rustpush compilation is no longer the blocker: the preparation patch and
+evidence are in [`docs/lb-008-blocker.md`](lb-008-blocker.md).
 
 The daemon's tests load only the synthetic, credential-free mock fixture into
 an in-memory SQLite database. They do not read OpenBubbles data or require

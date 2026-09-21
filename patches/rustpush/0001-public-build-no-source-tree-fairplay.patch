@@ -2,45 +2,36 @@ diff --git a/Cargo.toml b/Cargo.toml
 index bdaf528..e78275e 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -7,6 +7,9 @@ edition = "2021"
- remote-anisette-v3 = ["omnisette/remote-anisette-v3", "icloud_auth/remote-anisette-v3"]
- remote-clearadi = ["omnisette/remote-clearadi", "icloud_auth/remote-clearadi"]
- macos-validation-data = ["dep:open-absinthe"]
+@@ -9,0 +10,3 @@ macos-validation-data = ["dep:open-absinthe"]
 +# Development and CI builds may opt into the explicit no-signer path.  It is
 +# intentionally not a source of Apple activation material.
 +dummy-fairplay = []
- default = ["macos-validation-data"]
- 
- [dependencies]
 diff --git a/src/activation.rs b/src/activation.rs
-index d9b2d36..edc89e3 100644
+index d9b2d36..3a8ab6c 100644
 --- a/src/activation.rs
 +++ b/src/activation.rs
-@@ -1,10 +1,7 @@
- use keystore::{KeystoreAccessRules, KeystoreDigest, KeystorePadding, KeystorePublicKey, KeystoreSignKey, RsaKey};
+@@ -2 +2,7 @@ use keystore::{KeystoreAccessRules, KeystoreDigest, KeystorePadding, KeystorePub
 -use openssl::{hash::MessageDigest, nid::Nid, pkey::{PKey, Params}, rsa::{Padding, Rsa}, sign::Signer, x509::{X509, X509Name, X509Req}};
-+use openssl::x509::X509;
- use plist::{Data, Value};
--use rand::{seq::SliceRandom, thread_rng};
++use openssl::{
++    hash::MessageDigest,
++    pkey::PKey,
++    rsa::Padding,
++    sign::Signer,
++    x509::X509,
++};
+@@ -5 +10,0 @@ use rand::{seq::SliceRandom, thread_rng};
 -use rasn::types::Oid;
- use regex::Regex;
+@@ -7 +11,0 @@ use regex::Regex;
 -use reqwest::Version;
- use serde::Serialize;
- use x509_cert::{attr::AttributeTypeAndValue, der::{Decode, Encode, EncodePem, asn1::{BitString, Null, SetOfVec, Utf8StringRef}, pem::LineEnding}, name::{Name, RdnSequence, RelativeDistinguishedName}, request::{CertReq, CertReqInfo}, spki::{AlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfo}};
- 
-@@ -35,33 +32,14 @@ struct ActivationRequest {
-     fair_play_signature: Data
- }
- 
+@@ -8,0 +13 @@ use serde::Serialize;
++use std::fs;
+@@ -38,17 +43,11 @@ struct ActivationRequest {
 -macro_rules! include_cert {
 -    ($name:literal) => {
 -        (include_bytes!(concat!("../certs/fairplay/", $name, ".crt")), include_bytes!(concat!("../certs/fairplay/", $name, ".pem")))
 -    };
-+#[cfg(feature = "dummy-fairplay")]
-+fn fairplay_sign(_data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
-+    Err(PushError::DummyFairplayUnavailable)
- }
- 
+-}
+-
 -const FAIRPLAY_KEYS: &[(&'static [u8], &'static [u8])] = &[
 -    include_cert!("4056631661436364584235346952193"),
 -    include_cert!("4056631661436364584235346952194"),
@@ -52,54 +43,100 @@ index d9b2d36..edc89e3 100644
 -    include_cert!("4056631661436364584235346952200"),
 -    include_cert!("4056631661436364584235346952201"),
 -    include_cert!("4056631661436364584235346952208"),
--];
--
++const FAIRPLAY_NAMES: [&str; 10] = [
++    "4056631661436364584235346952193",
++    "4056631661436364584235346952194",
++    "4056631661436364584235346952195",
++    "4056631661436364584235346952196",
++    "4056631661436364584235346952197",
++    "4056631661436364584235346952198",
++    "4056631661436364584235346952199",
++    "4056631661436364584235346952200",
++    "4056631661436364584235346952201",
++    "4056631661436364584235346952208",
+@@ -57,4 +56,7 @@ const FAIRPLAY_KEYS: &[(&'static [u8], &'static [u8])] = &[
 -fn fairplay_sign(data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
 -    let (cert, key) = FAIRPLAY_KEYS.choose(&mut thread_rng()).expect("no keys!");
 -
 -    let key = PKey::private_key_from_der(&key)?;
--
++#[cfg(feature = "dummy-fairplay")]
++fn fairplay_sign(
++    _os_config: &dyn OSConfig,
++    _data: &[u8],
++) -> Result<(Vec<u8>, Vec<u8>), PushError> {
++    Err(PushError::DummyFairplayUnavailable)
++}
+@@ -62 +64,31 @@ fn fairplay_sign(data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
 -    let mut signer = Signer::new(MessageDigest::sha1(), &key)?;
--    signer.set_rsa_padding(Padding::PKCS1)?;
--    Ok((*cert, signer.sign_oneshot_to_vec(data)?))
 +#[cfg(not(feature = "dummy-fairplay"))]
-+fn fairplay_sign(_data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
-+    Err(PushError::FairplaySignerUnavailable)
- }
- 
- pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, PushError> {
++fn fairplay_sign(os_config: &dyn OSConfig, data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), PushError> {
++    let directory = os_config
++        .get_fairplay_keys_dir()
++        .ok_or(PushError::FairplaySignerUnavailable)?;
++    let mut pairs = Vec::with_capacity(FAIRPLAY_NAMES.len());
++    for name in FAIRPLAY_NAMES {
++        let certificate = fs::read(directory.join(format!("{name}.crt")))
++            .map_err(|_| PushError::FairplayMaterialUnavailable)?;
++        let private_key = fs::read(directory.join(format!("{name}.pem")))
++            .map_err(|_| PushError::FairplayMaterialUnavailable)?;
++        let certificate = X509::from_der(&certificate)
++            .map_err(|_| PushError::FairplayMaterialInvalid)?;
++        let private_key = PKey::private_key_from_der(&private_key)
++            .map_err(|_| PushError::FairplayMaterialInvalid)?;
++        let certificate_public_key = certificate
++            .public_key()
++            .and_then(|key| key.public_key_to_der())
++            .map_err(|_| PushError::FairplayMaterialInvalid)?;
++        let private_public_key = private_key
++            .public_key_to_der()
++            .map_err(|_| PushError::FairplayMaterialInvalid)?;
++        if certificate_public_key != private_public_key {
++            return Err(PushError::FairplayMaterialInvalid);
++        }
++        pairs.push((certificate.to_der()?, private_key));
++    }
++    let (certificate, private_key) = pairs
++        .choose(&mut thread_rng())
++        .ok_or(PushError::FairplayMaterialUnavailable)?;
++    let mut signer = Signer::new(MessageDigest::sha1(), private_key)?;
+@@ -64 +96 @@ fn fairplay_sign(data: &[u8]) -> Result<(&'static [u8], Vec<u8>), PushError> {
+-    Ok((*cert, signer.sign_oneshot_to_vec(data)?))
++    Ok((certificate.clone(), signer.sign_oneshot_to_vec(data)?))
+@@ -108 +140 @@ pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, Pu
+-    let (fair_play_cert_chain, fair_play_signature) = fairplay_sign(&activation_bytes)?;
++    let (fair_play_cert_chain, fair_play_signature) = fairplay_sign(os_config, &activation_bytes)?;
+@@ -113 +145 @@ pub async fn activate(os_config: &dyn OSConfig) -> Result<KeyPairNew<RsaKey>, Pu
+-        fair_play_cert_chain: fair_play_cert_chain.to_vec().into(),
++        fair_play_cert_chain: fair_play_cert_chain.into(),
 diff --git a/src/error.rs b/src/error.rs
-index 9452961..d7a89e3 100644
+index 9452961..6d0a470 100644
 --- a/src/error.rs
 +++ b/src/error.rs
-@@ -17,4 +17,8 @@ use crate::{aps::APSMessage, ids::user::{IDSError, SupportAlert}, util::Resource
- 
- #[derive(Error, Debug)]
- pub enum PushError {
+@@ -19,0 +20,8 @@ pub enum PushError {
 +    #[error("FairPlay signing is unavailable in this public build; configure a production signer before activation")]
 +    FairplaySignerUnavailable,
 +    #[error("dummy FairPlay mode is compile-only and cannot activate Apple services")]
 +    DummyFairplayUnavailable,
-     #[error("Cryptography error: {0}")]
-     SSLError(#[from] ErrorStack),
++    #[error("FairPlay signer material is unavailable")]
++    FairplayMaterialUnavailable,
++    #[error("FairPlay signer material is invalid")]
++    FairplayMaterialInvalid,
 diff --git a/src/lib.rs b/src/lib.rs
-index 0b64545..715d661 100644
+index 0b64545..2d8869c 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -23,6 +23,7 @@ pub use icloud::pcs;
- pub use icloud::pcs;
- 
- pub use util::CompactECKey;
+@@ -25,0 +26,2 @@ pub use util::CompactECKey;
 +pub use util::{get_bag, plist_to_buf, IDS_BAG, REQWEST};
- 
- #[cfg(feature = "macos-validation-data")]
- pub mod macos;
-@@ -39,7 +40,7 @@ use std::fmt::Debug;
- pub use icloud_auth::{DefaultAnisetteProvider, FetchedToken, PersistAccountData, GenerateVerificationTokenRequest, default_provider, ArcAnisetteClient, LoginClientInfo, LoginState, AppleAccount, VerifyBody, TrustedPhoneNumber};
- 
- pub use util::{DebugRwLock, DebugMutex};
++pub use ids::user::IDSService;
+@@ -36 +38 @@ pub mod mmcsp {
+-use std::collections::HashMap;
++use std::{collections::HashMap, path::PathBuf};
+@@ -42 +44 @@ pub use util::{DebugRwLock, DebugMutex};
 -use activation::ActivationInfo;
 +pub use activation::ActivationInfo;
- pub use aps::{APSConnectionResource, APSConnection, APSMessage, APSState};
- use async_trait::async_trait;
- pub use auth::{request_update_account, TokenProviderState, UpdateAccountFinish, MobileMeDelegateResponse};
+@@ -99,0 +102,5 @@ pub trait OSConfig: Sync + Send {
++    /// Returns the user-local FairPlay material directory used only during
++    /// APS device activation. Public builds leave this unset by default.
++    fn get_fairplay_keys_dir(&self) -> Option<PathBuf> {
++        None
++    }

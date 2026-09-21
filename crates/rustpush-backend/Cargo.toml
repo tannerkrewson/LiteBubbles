@@ -6,9 +6,8 @@ license-file.workspace = true
 rust-version.workspace = true
 
 [features]
-# This feature only proves that rustpush's compile-time FairPlay dependency is
-# gone. The corresponding rustpush path returns an explicit error if invoked.
-# It must never be enabled as a production activation mechanism.
+# This feature is an explicit compile/mock-test path. Its rustpush activation
+# signer returns an error and must never be used for production activation.
 development-dummy-fairplay = ["rustpush/dummy-fairplay"]
 
 [dependencies]
@@ -17,7 +16,11 @@ base64.workspace = true
 litebubbles-core = { path = "../core" }
 prost.workspace = true
 litebubbles-validation-provider = { path = "../validation-provider" }
+keystore = { path = "../../vendor/rustpush/keystore" }
 plist = "1.7"
+rand.workspace = true
 rustpush = { package = "rustpush", path = "../../vendor/rustpush", default-features = false, features = ["remote-anisette-v3", "macos-validation-data"] }
 serde.workspace = true
+sha2.workspace = true
+tokio.workspace = true
 thiserror.workspace = true

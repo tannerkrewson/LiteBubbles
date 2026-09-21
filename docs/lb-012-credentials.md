@@ -16,6 +16,8 @@ ordinary local state:
 - `Diagnostic`, `SecretKey`, `SecretValue`, and secret-store errors are
   value-free and safe for structured diagnostics.
 
-This is the non-rustpush portion of LB-012. Live account/session integration
-is intentionally not claimed: the rustpush backend remains blocked by LB-008
-and LB-050/#49, as documented in `lb-008-blocker.md`.
+The production CLI path now initializes rustpush's encrypted local keystore
+and stores its Apple session snapshot and genuine-Mac hardware payload through
+the same Secret Service boundary. The general D-Bus synchronization adapter is
+still a separate follow-up; the public build and production signer are no
+longer blocked by missing source-tree FairPlay files.

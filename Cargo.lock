@@ -2605,13 +2605,17 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "keystore",
  "litebubbles-core",
  "litebubbles-validation-provider",
  "plist",
  "prost 0.13.5",
+ "rand 0.8.8",
  "rustpush",
  "serde",
+ "sha2",
  "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -2645,6 +2649,7 @@ name = "litebubbles-validation-provider"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "openssl",
  "serde",
  "serde_json",
  "sha2",
@@ -2665,8 +2670,11 @@ dependencies = [
  "litebubbles-protocol",
  "litebubbles-rustpush-backend",
  "litebubbles-storage",
+ "rand 0.8.8",
+ "rpassword",
  "signal-hook",
  "thiserror 2.0.20",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "zbus",
@@ -3942,6 +3950,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rtc-media"
 version = "0.9.0"
 dependencies = [
@@ -4026,6 +4045,16 @@ dependencies = [
  "sansio",
  "subtle",
  "url",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

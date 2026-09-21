@@ -29,7 +29,7 @@ if [[ ${actual_revision} != "${rustpush_revision}" ]]; then
 fi
 
 if ! git -C "${rustpush_dir}" diff --quiet; then
-    if git -C "${rustpush_dir}" apply --reverse --check "${patch_file}" >/dev/null 2>&1; then
+    if git -C "${rustpush_dir}" apply --unidiff-zero --reverse --check "${patch_file}" >/dev/null 2>&1; then
         printf '%s\n' 'prepare-rustpush: public-build patch is already applied'
         exit 0
     fi
@@ -38,7 +38,7 @@ if ! git -C "${rustpush_dir}" diff --quiet; then
     exit 1
 fi
 
-git -C "${rustpush_dir}" apply --check "${patch_file}"
-git -C "${rustpush_dir}" apply "${patch_file}"
+git -C "${rustpush_dir}" apply --unidiff-zero --check "${patch_file}"
+git -C "${rustpush_dir}" apply --unidiff-zero "${patch_file}"
 printf 'prepare-rustpush: patched pinned rustpush %s for public builds\n' \
     "${rustpush_revision}"

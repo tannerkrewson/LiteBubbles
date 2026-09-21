@@ -18,6 +18,13 @@ use std::time::{Duration, Instant};
 use tar::Archive;
 use thiserror::Error;
 
+mod fairplay;
+
+pub use fairplay::{
+    FAIRPLAY_CERT_NAMES, FAIRPLAY_DIR_NAME, extract_fairplay_material, fairplay_directory,
+    validate_fairplay_directory,
+};
+
 /// The OpenBubbles release whose public module documents the ABI used here.
 pub const EXPECTED_COMPONENT_VERSION: &str = "v1.15.0+136";
 /// SHA-256 of the x86_64 Linux `openbubbles.so` used by the public module.
@@ -91,6 +98,8 @@ pub enum ValidationError {
     RemoveIo,
     #[error("the validation component is unavailable on this architecture")]
     UnsupportedPlatform,
+    #[error("the official artifact does not contain supported FairPlay material")]
+    InvalidFairplayMaterial,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -309,6 +318,7 @@ impl ComponentManifest {
 pub struct ValidatedComponent {
     root: PathBuf,
     library: PathBuf,
+    fairplay: PathBuf,
 }
 
 impl ValidatedComponent {
@@ -318,6 +328,12 @@ impl ValidatedComponent {
 
     pub fn library_path(&self) -> &Path {
         &self.library
+    }
+
+    /// Returns the private, user-local directory containing the FairPlay
+    /// material derived during production setup.
+    pub fn fairplay_dir(&self) -> &Path {
+        &self.fairplay
     }
 }
 
@@ -367,9 +383,13 @@ pub fn validate_component_directory(
         return Err(ValidationError::InvalidComponentHash);
     }
 
+    let fairplay = fairplay_directory(&root);
+    validate_fairplay_directory(&fairplay)?;
+
     Ok(ValidatedComponent {
         root,
         library: library_real,
+        fairplay,
     })
 }
 
@@ -823,6 +843,9 @@ pub fn install_official_artifact(
         .and_then(|_| library_file.sync_all())
         .map_err(|_| ValidationError::InstallIo)?;
     set_private_mode(&library_path).map_err(|_| ValidationError::InstallIo)?;
+
+    extract_fairplay_material(&library_bytes, fairplay_directory(temporary.path()))
+        .map_err(|_| ValidationError::InstallIo)?;
 
     let manifest = ComponentManifest::supported();
     let manifest_bytes =

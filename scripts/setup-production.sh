@@ -11,28 +11,20 @@ Install or check the user-supplied production validation component. ARCHIVE
 must be a compatible official OpenBubbles release archive obtained by the user.
 This script does not download artifacts or inspect an OpenBubbles installation.
 
-The validation component supplies Mac validation data only. Real Apple
-activation separately requires a production FairPlay device-activation signer;
-the public LiteBubbles build does not provide or configure that signer.
+The installer verifies the supported release, keeps the opaque library under
+the user's XDG data directory, and derives the FairPlay activation material
+there from that same user-supplied library. The private material is never
+stored in the source checkout or printed. It is not necessary to manage ten
+certificate/key files by hand.
+
+After the component is installed, run `litebubblesd setup` (or use the setup
+UI) with the base64 payload produced by the official Mac Hardware Info tool.
 EOF
 }
 
 die() {
     printf 'setup-production: %s\n' "$1" >&2
     exit 1
-}
-
-fairplay_notice() {
-    cat <<'EOF'
-
-FairPlay setup requirement:
-  The validation component covers Mac validation-data generation only.
-  Real Apple activation also requires the separate rustpush FairPlay
-  device-activation signer. The public LiteBubbles build does not provide or
-  configure that signer, and development dummy FairPlay is not valid for
-  production. Production activation remains unavailable until that boundary
-  is resolved (LB-064).
-EOF
 }
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -85,5 +77,4 @@ component_command=$(find_component_command) || die \
 
 component_status=0
 "${component_command}" "$@" || component_status=$?
-fairplay_notice
 exit "${component_status}"
